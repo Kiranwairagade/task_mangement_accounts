@@ -89,9 +89,9 @@ function updateRecord(sheetName, idKey, record) {
     if (data[i][idIndex] === record[idKey]) {
       const rowNum = i + 1;
       const rowValues = headers.map((header, colIndex) => {
-        if (!header) return ''; // Skip empty headers
-        // Use new value if provided, otherwise keep existing value
-        return record[header] !== undefined && record[header] !== null ? record[header] : data[i][colIndex];
+        if (!header) return '';
+        // If the update record contains the key, use it. Otherwise keep original cell.
+        return (record.hasOwnProperty(header)) ? record[header] : data[i][colIndex];
       });
       sheet.getRange(rowNum, 1, 1, headers.length).setValues([rowValues]);
       logActivity('Update', sheetName, `Updated ID: ${record[idKey]}`);
@@ -99,6 +99,44 @@ function updateRecord(sheetName, idKey, record) {
     }
   }
   return false;
+}
+
+/**
+ * Deletes a record from a sheet based on ID.
+ * @param {string} sheetName
+ * @param {string} idKey
+ * @param {string} idValue
+ */
+function deleteRecord(sheetName, idKey, idValue) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return false;
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => h ? String(h).trim() : '');
+  const idIndex = headers.indexOf(idKey);
+
+  if (idIndex === -1) return false;
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][idIndex] === idValue) {
+      sheet.deleteRow(i + 1);
+      logActivity('Delete', sheetName, `Deleted ID: ${idValue}`);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Returns the current headers (schema) for a sheet.
+ * @param {string} sheetName
+ */
+function getSchema(sheetName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return null;
+  return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
 }
 
 /**

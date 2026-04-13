@@ -6,11 +6,12 @@ function initializeDatabase() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   
   const sheets = [
-    { name: 'DB_Tasks', headers: ['TaskID', 'Project', 'Category', 'Title', 'Description', 'AssignedTo', 'Department', 'Priority', 'Status', 'ActionType', 'PlannedStart', 'DueDate', 'CompletedDate', 'EstHours', 'ActualHours', 'HoursVariance', 'DaysOpen', 'OverdueFlag', 'MonthBucket', 'ProgressPercent', 'NextStep', 'CreatedAt', 'Source', 'Manager'] },
+    { name: 'DB_Tasks', headers: ['TaskID', 'Title', 'Description', 'AssignedTo', 'Priority', 'Status', 'DueDate', 'CreatedAt', 'CompletedDate'] },
     { name: 'DB_TaskSteps', headers: ['StepID', 'ParentTaskID', 'StepName', 'StepDescription', 'StepOwner', 'StepStatus', 'ActionType', 'PlannedDate', 'DueDate', 'CompletedDate', 'EstHours', 'ActualHours', 'HoursVariance', 'DaysOpen', 'Overdue', 'Notes'] },
-    { name: 'DB_Employees', headers: ['EmpID', 'Name', 'Department', 'Role', 'Manager', 'Email', 'JoinDate', 'WeeklyCapacity', 'Status', 'Location', 'Notes'] },
+    { name: 'DB_Employees', headers: ['EmpID', 'Name', 'Role', 'Email', 'JoinDate', 'Status'] },
     { name: 'DB_AuditLog', headers: ['Timestamp', 'User', 'Action', 'TargetID', 'Details'] },
-    { name: 'DB_Config', headers: ['Category', 'Value', 'Label', 'Color'] }
+    { name: 'DB_Config', headers: ['Category', 'Value', 'Label', 'Color'] },
+    { name: 'DB_Users', headers: ['Username', 'PasswordHash', 'Email', 'Role', 'CreatedAt'] }
   ];
 
   sheets.forEach(sheetInfo => {
@@ -40,7 +41,7 @@ function initializeDatabase() {
     configSheet.getRange(2, 1, configData.length, 4).setValues(configData);
   }
 
-  SpreadsheetApp.getUi().alert('✅ Database Initialized', 'All DB sheets and initial configurations have been set up.', SpreadsheetApp.getUi().ButtonSet.OK);
+  Logger.log('✅ Database Initialized: All DB sheets and initial configurations have been set up.');
 }
 
 /**
@@ -54,11 +55,11 @@ function seedTestData() {
   const empSheet = ss.getSheetByName('DB_Employees');
   if (empSheet.getLastRow() === 1) {
     const employees = [
-      ['EMP01', 'Pammi Gaur', 'Operations', 'Project Coordinator', 'Sara Khan', 'pammi@company.com', '2025-07-15', 40, 'Active', 'Remote', ''],
-      ['EMP02', 'Pankaj Vairagade', 'Analytics', 'Data Analyst', 'Sara Khan', 'pankaj@company.com', '2025-08-01', 40, 'Active', 'On-Site', ''],
-      ['EMP03', 'Sara Khan', 'Management', 'Manager', 'Director', 'sara@company.com', '2024-01-10', 40, 'Active', 'On-Site', '']
+      ['EMP-001', 'Pammi Gaur', 'Director', 'pammi@company.com', '2025-07-15', 'Active'],
+      ['EMP-002', 'Pankaj Vairagade', 'Employee', 'pankaj@company.com', '2025-08-01', 'Active'],
+      ['EMP-003', 'Sara Khan', 'Director', 'sara@company.com', '2024-01-10', 'Active']
     ];
-    empSheet.getRange(2, 1, employees.length, 11).setValues(employees);
+    empSheet.getRange(2, 1, employees.length, 6).setValues(employees);
   }
 
   // 2. Seed Tasks
@@ -67,18 +68,15 @@ function seedTestData() {
     const now = new Date();
     const pastDate = new Date(now); pastDate.setDate(pastDate.getDate() - 5);
     const futureDate = new Date(now); futureDate.setDate(futureDate.getDate() + 5);
-    const oldDate = new Date(now); oldDate.setDate(oldDate.getDate() - 40); // For carry-forward
 
     const tasks = [
-      // headers: ['TaskID', 'Project', 'Category', 'Title', 'Description', 'AssignedTo', 'Department', 'Priority', 'Status', 'ActionType', 'PlannedStart', 'DueDate', 'CompletedDate', 'EstHours', 'ActualHours', 'HoursVariance', 'DaysOpen', 'OverdueFlag', 'MonthBucket', 'ProgressPercent', 'NextStep', 'CreatedAt', 'Source', 'Manager']
-      ['TSK-001', 'Onboarding Revamp', 'Implementation', 'Collect requirements', 'Gather client specs', 'Pammi Gaur', 'Operations', 'High', 'Completed', 'Close', pastDate, now, now, 12, 11, -1, 5, 'No', 'Apr', 100, 'Done', pastDate, 'Client', 'Sara Khan'],
-      ['TSK-002', 'Onboarding Revamp', 'Implementation', 'Build checklist', 'Create master list', 'Pammi Gaur', 'Operations', 'Medium', 'In Progress', 'Execute', now, futureDate, '', 10, 6, '', 5, 'No', 'Apr', 60, 'Review', oldDate, 'Operations', 'Sara Khan'], // Simulating an old carry-forward task
-      ['TSK-003', 'Onboarding Revamp', 'Training', 'Schedule sessions', 'Coordinate slots', 'Pammi Gaur', 'Operations', 'Low', 'Not Started', 'Plan', futureDate, futureDate, '', 8, 0, '', 0, 'No', 'Apr', 0, 'Wait', now, 'Leadership', 'Sara Khan'],
-      ['TSK-004', 'Website Migration', 'Operations', 'Vendor coordination', 'Lock content set', 'Pankaj Vairagade', 'Analytics', 'Critical', 'Blocked', 'Escalate', pastDate, pastDate, '', 6, 3, '', 10, 'Yes', 'Mar', 30, 'Approval', pastDate, 'Vendor', 'Sara Khan'],
-      ['TSK-005', 'Website Migration', 'Reporting', 'Progress dashboard', 'Build weekly view', 'Pankaj Vairagade', 'Analytics', 'High', 'In Progress', 'Execute', pastDate, futureDate, '', 14, 9, '', 5, 'No', 'Apr', 50, 'Metrics', pastDate, 'Internal', 'Sara Khan']
+      // headers: ['TaskID', 'Title', 'Description', 'AssignedTo', 'Priority', 'Status', 'DueDate', 'CreatedAt', 'CompletedDate']
+      ['TSK-001', 'Monthly Audit', 'Review accounts for April', 'Pammi Gaur', 'High', 'Completed', now, pastDate, now],
+      ['TSK-002', 'Tax Filing', 'GST submission for Q1', 'Sara Khan', 'Critical', 'In Progress', futureDate, pastDate, ''],
+      ['TSK-003', 'Payroll Review', 'Approve salary sheets', 'Pankaj Vairagade', 'Medium', 'Not Started', futureDate, now, '']
     ];
-    tasksSheet.getRange(2, 1, tasks.length, 24).setValues(tasks);
+    tasksSheet.getRange(2, 1, tasks.length, 9).setValues(tasks);
   }
 
-  SpreadsheetApp.getUi().alert('✅ Test Data Seeded', 'Employees and Tasks have been populated for testing.', SpreadsheetApp.getUi().ButtonSet.OK);
+  Logger.log('✅ Test Data Seeded: Employees and Tasks have been populated for testing.');
 }

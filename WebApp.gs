@@ -51,11 +51,28 @@ function api(method, p1, p2) {
       case 'addTask':
         result = addNewTask(p1);
         break;
+      case 'deleteTask':
+        result = deleteTask(p1);
+        break;
       case 'updateTaskStatus':
         result = updateTaskStatus(p1, p2);
         break;
       case 'updateTaskDetails':
         result = updateTaskDetails(p1);
+        break;
+      case 'addEmployee':
+        result = addNewEmployee(p1);
+        break;
+      case 'deleteMember':
+        result = deleteMember(p1);
+        break;
+      
+      // ── Auth ──
+      case 'login':
+        result = loginUser(p1, p2);
+        break;
+      case 'signup':
+        result = signupUser(p1);
         break;
 
       // ── Catch-all ──

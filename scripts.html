@@ -1,266 +1,271 @@
 <script>
-'use strict';
+  'use strict';
 
-// ======================================================
-//  WORKFLOW PRO — MASTER SCRIPT v4.0
-//  Full 24-column Task schema + Employee Master
-//  Advanced Chart.js Analytics + Glassmorphism UI
-// ======================================================
+  // ======================================================
+  //  WORKFLOW PRO — MASTER SCRIPT v4.0
+  // ======================================================
+  
+  /**
+   * NOTE: "Unrecognized feature" warnings in the console (ambient-light-sensor, speaker, etc.)
+   * are standard for Google Apps Script environments and can be safely ignored.
+   * They do NOT affect the functionality of this application.
+   */
 
-/* ── CONSTANTS ── */
-const STATUS_MAP = {
-  'Not Started':  { action: 'Plan',     color: '#64748b', bg: 'rgba(100,116,139,0.15)', css: 'status-not-started' },
-  'In Progress':  { action: 'Execute',  color: '#3b82f6', bg: 'rgba(59,130,246,0.15)',  css: 'status-in-progress' },
-  'Review':       { action: 'Review',   color: '#f59e0b', bg: 'rgba(245,158,11,0.15)',  css: 'status-review'      },
-  'On Hold':      { action: 'Wait',     color: '#8b5cf6', bg: 'rgba(139,92,246,0.15)',  css: 'status-on-hold'     },
-  'Blocked':      { action: 'Escalate', color: '#ef4444', bg: 'rgba(239,68,68,0.15)',   css: 'status-blocked'     },
-  'Completed':    { action: 'Close',    color: '#10b981', bg: 'rgba(16,185,129,0.15)',  css: 'status-completed'   },
-  'Cancelled':    { action: 'Cancel',   color: '#6b7280', bg: 'rgba(107,114,128,0.15)', css: 'status-cancelled'  }
-};
+  /* ── CONSTANTS ── */
+  const STATUS_MAP = {
+    'Not Started': { action: 'Plan', color: '#64748b', bg: 'rgba(100,116,139,0.15)', css: 'status-not-started' },
+    'In Progress': { action: 'Execute', color: '#3b82f6', bg: 'rgba(59,130,246,0.15)', css: 'status-in-progress' },
+    'Review': { action: 'Review', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)', css: 'status-review' },
+    'On Hold': { action: 'Wait', color: '#8b5cf6', bg: 'rgba(139,92,246,0.15)', css: 'status-on-hold' },
+    'Blocked': { action: 'Escalate', color: '#ef4444', bg: 'rgba(239,68,68,0.15)', css: 'status-blocked' },
+    'Completed': { action: 'Close', color: '#10b981', bg: 'rgba(16,185,129,0.15)', css: 'status-completed' },
+    'Cancelled': { action: 'Cancel', color: '#6b7280', bg: 'rgba(107,114,128,0.15)', css: 'status-cancelled' }
+  };
 
-const PRIORITY_MAP = {
-  'Critical': { color: '#dc2626', css: 'priority-critical', order: 0 },
-  'High':     { color: '#ef4444', css: 'priority-high',     order: 1 },
-  'Medium':   { color: '#f59e0b', css: 'priority-medium',   order: 2 },
-  'Low':      { color: '#10b981', css: 'priority-low',      order: 3 }
-};
+  const PRIORITY_MAP = {
+    'Critical': { color: '#dc2626', css: 'priority-critical', order: 0 },
+    'High': { color: '#ef4444', css: 'priority-high', order: 1 },
+    'Medium': { color: '#f59e0b', css: 'priority-medium', order: 2 },
+    'Low': { color: '#10b981', css: 'priority-low', order: 3 }
+  };
 
-const KANBAN_COLS = ['Not Started', 'In Progress', 'Review', 'Blocked', 'Completed'];
+  const KANBAN_COLS = ['Not Started', 'In Progress', 'Review', 'Blocked', 'Completed'];
 
-const AVATAR_COLORS = ['#6366f1','#14b8a6','#f59e0b','#ef4444','#8b5cf6','#3b82f6','#10b981','#ec4899'];
+  const AVATAR_COLORS = ['#6366f1', '#14b8a6', '#f59e0b', '#ef4444', '#8b5cf6', '#3b82f6', '#10b981', '#ec4899'];
 
-/* ── STATE ── */
-const State = {
-  tasks: [],
-  employees: [],
-  stats: {},
-  chartData: {},
-  activeView: 'dashboard',
-  activeSubView: 'employee',
-  chartInstances: [],
-  isLoading: false
-};
+  /* ── STATE ── */
+  const State = {
+    user: null, // Stores { username, role, email }
+    tasks: [],
+    employees: [],
+    stats: {},
+    chartData: {},
+    activeView: 'dashboard',
+    activeSubView: 'employee',
+    chartInstances: [],
+    isLoading: false
+  };
 
-/* ── SERVER BRIDGE ── */
-function callServer(method, p1, p2) {
-  return new Promise((resolve, reject) => {
-    google.script.run
-      .withSuccessHandler(res => {
-        if (res && res.success) resolve(res.data);
-        else reject(new Error(res ? res.error : 'Unknown error'));
-      })
-      .withFailureHandler(err => reject(err))
-      .api(method, p1, p2);
-  });
-}
+  /* ── SERVER BRIDGE ── */
+  function callServer(method, p1, p2) {
+    return new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(res => {
+          if (res && res.success) resolve(res.data);
+          else reject(new Error(res ? res.error : 'Unknown error'));
+        })
+        .withFailureHandler(err => reject(err))
+        .api(method, p1, p2);
+    });
+  }
 
-/* ── HELPERS ── */
-function formatDate(raw) {
-  if (!raw) return '—';
-  try {
-    const d = new Date(raw);
-    if (isNaN(d.getTime())) return '—';
-    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  } catch { return '—'; }
-}
+  /* ── HELPERS ── */
+  function formatDate(raw) {
+    if (!raw) return '—';
+    try {
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return '—';
+      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch { return '—'; }
+  }
 
-function formatISO(raw) {
-  if (!raw) return '';
-  try {
-    const d = new Date(raw);
-    if (isNaN(d.getTime())) return '';
-    return d.toISOString().split('T')[0];
-  } catch { return ''; }
-}
+  function formatISO(raw) {
+    if (!raw) return '';
+    try {
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return '';
+      return d.toISOString().split('T')[0];
+    } catch { return ''; }
+  }
 
-function getInitials(name) {
-  if (!name) return '??';
-  return name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
-}
+  function getInitials(name) {
+    if (!name) return '??';
+    return name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+  }
 
-function getAvatarColor(name) {
-  if (!name) return AVATAR_COLORS[0];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-}
+  function getAvatarColor(name) {
+    if (!name) return AVATAR_COLORS[0];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+  }
 
-function statusBadge(status) {
-  const s = STATUS_MAP[status] || STATUS_MAP['Not Started'];
-  return `<span class="badge ${s.css}">${status || '—'}</span>`;
-}
+  function statusBadge(status) {
+    const s = STATUS_MAP[status] || STATUS_MAP['Not Started'];
+    return `<span class="badge ${s.css}">${status || '—'}</span>`;
+  }
 
-function priorityBadge(priority) {
-  const p = PRIORITY_MAP[priority];
-  if (!p) return `<span class="badge">${priority || '—'}</span>`;
-  return `<span class="badge ${p.css}">${priority}</span>`;
-}
+  function priorityBadge(priority) {
+    const p = PRIORITY_MAP[priority];
+    if (!p) return `<span class="badge">${priority || '—'}</span>`;
+    return `<span class="badge ${p.css}">${priority}</span>`;
+  }
 
-function progressBar(pct, color) {
-  const val = Math.min(100, Math.max(0, parseFloat(pct) || 0));
-  const col = color || (val >= 80 ? '#10b981' : val >= 50 ? '#f59e0b' : '#3b82f6');
-  return `
+  function progressBar(pct, color) {
+    const val = Math.min(100, Math.max(0, parseFloat(pct) || 0));
+    const col = color || (val >= 80 ? '#10b981' : val >= 50 ? '#f59e0b' : '#3b82f6');
+    return `
     <div style="display:flex; align-items:center; gap:0.5rem;">
       <div class="progress-bar" style="flex:1; width:80px;">
         <div class="progress-fill" style="width:${val}%; background:${col};"></div>
       </div>
       <span class="text-xs text-muted">${val}%</span>
     </div>`;
-}
-
-function roundNum(n) { return Math.round((parseFloat(n) || 0) * 10) / 10; }
-
-/* ── DATA LOADING ── */
-async function refreshData() {
-  try {
-    const [tasks, employees, stats, chartData] = await Promise.all([
-      callServer('getRecords', 'DB_Tasks'),
-      callServer('getRecords', 'DB_Employees'),
-      callServer('getDashboardStats'),
-      callServer('getChartData')
-    ]);
-    State.tasks = tasks || [];
-    State.employees = employees || [];
-    State.stats = stats || {};
-    State.chartData = chartData || {};
-  } catch (err) {
-    console.error('Data load error:', err);
-    throw err;
   }
-}
 
-/* ── INIT ── */
-async function init() {
-  // Apply saved theme
-  const saved = localStorage.getItem('wf-theme') || 'dark';
-  document.documentElement.setAttribute('data-theme', saved);
-  updateThemeIcon(saved);
+  function roundNum(n) { return Math.round((parseFloat(n) || 0) * 10) / 10; }
 
-  document.getElementById('content').innerHTML = `
-    <div class="loading-overlay">
-      <div class="loader"></div>
-      <p style="font-weight:600;">Loading workspace…</p>
-      <p class="text-xs text-muted">Fetching data from Google Sheets</p>
-    </div>`;
-
-  try {
-    await refreshData();
-    setView('dashboard');
-  } catch (err) {
-    document.getElementById('content').innerHTML = `
-      <div class="loading-overlay">
-        <div style="color:var(--danger); font-size:2rem;">⚠️</div>
-        <p style="font-weight:700; color:var(--danger);">Data Load Failed</p>
-        <p class="text-sm text-muted">${err.message || err}</p>
-        <button class="btn btn-primary" onclick="init()">Retry</button>
-      </div>`;
-  }
-}
-
-/* ── ROUTER ── */
-function setView(view) {
-  State.activeView = view;
-  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-  const navBtn = document.getElementById(`nav-${view}`);
-  if (navBtn) navBtn.classList.add('active');
-
-  // Close mobile sidebar
-  document.getElementById('sidebar').classList.remove('open');
-
-  destroyCharts();
-
-  if (view === 'dashboard')  renderDashboard();
-  if (view === 'tasks')      renderTasks();
-  if (view === 'kanban')     renderKanban();
-  if (view === 'reports')    renderReports();
-  if (view === 'employees')  renderEmployees();
-}
-
-/* ── DESTROY ALL CHARTS ── */
-function destroyCharts() {
-  State.chartInstances.forEach(c => { try { c.destroy(); } catch(e) {} });
-  State.chartInstances = [];
-}
-
-/* ── CHART DEFAULTS ── */
-function chartDefaults() {
-  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
-  Chart.defaults.color = isDark ? '#7b8db8' : '#64748b';
-  Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
-  Chart.defaults.font.size = 12;
-  Chart.defaults.borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
-}
-
-function safeChart(id, config) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  try {
-    chartDefaults();
-    const instance = new Chart(el.getContext('2d'), config);
-    State.chartInstances.push(instance);
-  } catch(e) { console.warn('Chart error', id, e); }
-}
-
-// ======================================================
-//  DASHBOARD VIEW
-// ======================================================
-function renderDashboard() {
-  const main = document.getElementById('content');
-  const s = State.stats;
-  const openTasks = (s.total || 0) - (s.completed || 0);
-  const hrsVar = roundNum((s.estTotalHours || 0) - (s.actualTotalHours || 0));
-
-  // 12-month trend
-  const monthMap = {};
-  const now = new Date();
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
-    const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    monthMap[k] = { due: 0, comp: 0, actHrs: 0 };
-  }
-  State.tasks.forEach(t => {
-    if (!t.DueDate) return;
-    const d = new Date(t.DueDate);
-    const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    if (monthMap[k]) {
-      monthMap[k].due++;
-      if (t.Status === 'Completed') monthMap[k].comp++;
-      monthMap[k].actHrs += roundNum(t.ActualHours);
+  /* ── DATA LOADING ── */
+  async function refreshData() {
+    try {
+      const [tasks, employees, stats, chartData] = await Promise.all([
+        callServer('getRecords', 'DB_Tasks'),
+        callServer('getRecords', 'DB_Employees'),
+        callServer('getDashboardStats'),
+        callServer('getChartData')
+      ]);
+      State.tasks = tasks || [];
+      State.employees = employees || [];
+      State.stats = stats || {};
+      State.chartData = chartData || {};
+    } catch (err) {
+      console.error('Data load error:', err);
+      throw err;
     }
-  });
+  }
 
-  // Status counts including On Hold & Cancelled
-  const stsOrder = ['Not Started','In Progress','Review','On Hold','Blocked','Completed','Cancelled'];
-  const stsCount = {};
-  stsOrder.forEach(s => stsCount[s] = 0);
-  State.tasks.forEach(t => { if (stsCount[t.Status] !== undefined) stsCount[t.Status]++; });
-
-  // Employee workload
-  const empWork = {};
-  State.employees.forEach(e => empWork[e.Name] = { tasks: 0, actHrs: 0, overdue: 0, comp: 0 });
-  State.tasks.forEach(t => {
-    if (empWork[t.AssignedTo]) {
-      empWork[t.AssignedTo].tasks++;
-      empWork[t.AssignedTo].actHrs += roundNum(t.ActualHours);
-      if (t.OverdueFlag === 'Yes') empWork[t.AssignedTo].overdue++;
-      if (t.Status === 'Completed') empWork[t.AssignedTo].comp++;
+  /* ── INIT ── */
+  async function init() {
+    console.log('%c App Init: Starting Workflow Pro Auth Check ', 'background: #6366f1; color: #fff; padding: 2px 5px; border-radius: 3px;');
+    
+    // Check Session
+    const session = localStorage.getItem('wf-session');
+    
+    if (session) {
+      try {
+        console.log('Session: Found existing session. Validating...');
+        State.user = JSON.parse(session);
+        await proceedToDashboard();
+      } catch (e) {
+        console.warn('Session: Invalid or corrupted session. Clearing.');
+        localStorage.removeItem('wf-session');
+        showAuthScreen();
+      }
+    } else {
+      console.log('Session: No session found. Showing Login screen.');
+      showAuthScreen();
     }
-  });
 
-  const kpiCards = [
-    { label: 'Total Tasks',    value: s.total || 0,                 sub: 'All tracked tasks',         color: '#6366f1', icon: '📋' },
-    { label: 'Open Tasks',     value: openTasks,                    sub: `${s.completionRate||0}% complete`, color: '#3b82f6', icon: '🔄' },
-    { label: 'Completed',      value: s.completed || 0,             sub: 'Successfully delivered',    color: '#10b981', icon: '✅' },
-    { label: 'Overdue',        value: s.overdue || 0,               sub: 'Need immediate attention',   color: '#ef4444', icon: '⚠️' },
-    { label: 'Est. Hours',     value: roundNum(s.estTotalHours),    sub: 'Total planned effort',      color: '#8b5cf6', icon: '⏱️' },
-    { label: 'Actual Hours',   value: roundNum(s.actualTotalHours), sub: 'Hours logged to date',      color: '#14b8a6', icon: '⏰' },
-    { label: 'Hrs Variance',   value: hrsVar,                       sub: hrsVar >= 0 ? 'Under budget' : 'Over budget', color: hrsVar >= 0 ? '#10b981' : '#ef4444', icon: hrsVar >= 0 ? '📉' : '📈' },
-    { label: 'Completion Rate',value: `${s.completionRate || 0}%`,  sub: 'Tasks closed vs total',     color: '#f59e0b', icon: '🎯' }
-  ];
+    // Apply saved theme
+    const savedTheme = localStorage.getItem('wf-theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    updateThemeIcon(savedTheme);
+  }
 
-  const monthKeys = Object.keys(monthMap).sort();
+  function showAuthScreen() {
+    document.getElementById('auth-screen').style.display = 'flex';
+    document.getElementById('sidebar').style.display = 'none';
+    document.getElementById('content').innerHTML = ''; // Clear
+  }
 
-  main.innerHTML = `
+  /* ── ROUTER ── */
+  function setView(view) {
+    State.activeView = view;
+    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+    const navBtn = document.getElementById(`nav-${view}`);
+    if (navBtn) navBtn.classList.add('active');
+
+    // Close mobile sidebar
+    document.getElementById('sidebar').classList.remove('open');
+
+    destroyCharts();
+
+    if (view === 'dashboard') renderDashboard();
+    if (view === 'kanban') renderKanban();
+    if (view === 'reports') renderReports();
+    if (view === 'employees') renderEmployees();
+  }
+
+  /* ── DESTROY ALL CHARTS ── */
+  function destroyCharts() {
+    State.chartInstances.forEach(c => { try { c.destroy(); } catch (e) { } });
+    State.chartInstances = [];
+  }
+
+  /* ── CHART DEFAULTS ── */
+  function chartDefaults() {
+    const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+    Chart.defaults.color = isDark ? '#7b8db8' : '#64748b';
+    Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+    Chart.defaults.font.size = 12;
+    Chart.defaults.borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+  }
+
+  function safeChart(id, config) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    try {
+      chartDefaults();
+      const instance = new Chart(el.getContext('2d'), config);
+      State.chartInstances.push(instance);
+    } catch (e) { console.warn('Chart error', id, e); }
+  }
+
+  // ======================================================
+  //  DASHBOARD VIEW
+  // ======================================================
+  function renderDashboard() {
+    const main = document.getElementById('content');
+    const s = State.stats;
+    const openTasks = (s.total || 0) - (s.completed || 0);
+    const hrsVar = roundNum((s.estTotalHours || 0) - (s.actualTotalHours || 0));
+
+    // 12-month trend
+    const monthMap = {};
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
+      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      monthMap[k] = { due: 0, comp: 0, actHrs: 0 };
+    }
+    State.tasks.forEach(t => {
+      if (!t.DueDate) return;
+      const d = new Date(t.DueDate);
+      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (monthMap[k]) {
+        monthMap[k].due++;
+        if (t.Status === 'Completed') monthMap[k].comp++;
+      }
+    });
+
+    // Status counts including On Hold & Cancelled
+    const stsOrder = ['Not Started', 'In Progress', 'Review', 'On Hold', 'Blocked', 'Completed', 'Cancelled'];
+    const stsCount = {};
+    stsOrder.forEach(s => stsCount[s] = 0);
+    State.tasks.forEach(t => { if (stsCount[t.Status] !== undefined) stsCount[t.Status]++; });
+
+    // Employee workload
+    const empWork = {};
+    State.employees.forEach(e => empWork[e.Name] = { tasks: 0, overdue: 0, comp: 0 });
+    State.tasks.forEach(t => {
+      if (empWork[t.AssignedTo]) {
+        empWork[t.AssignedTo].tasks++;
+        const isOverdue = t.Status !== 'Completed' && t.Status !== 'Cancelled' && t.DueDate && new Date(t.DueDate) < now;
+        if (isOverdue) empWork[t.AssignedTo].overdue++;
+        if (t.Status === 'Completed') empWork[t.AssignedTo].comp++;
+      }
+    });
+
+    const kpiCards = [
+      { label: 'Total Tasks', value: s.total || 0, sub: 'All tracked tasks', color: '#6366f1', icon: '📋' },
+      { label: 'Open Tasks', value: openTasks, sub: `${s.completionRate || 0}% complete`, color: '#3b82f6', icon: '🔄' },
+      { label: 'Completed', value: s.completed || 0, sub: 'Successfully delivered', color: '#10b981', icon: '✅' },
+      { label: 'Overdue', value: s.overdue || 0, sub: 'Need immediate attention', color: '#ef4444', icon: '⚠️' }
+    ];
+
+    const monthKeys = Object.keys(monthMap).sort();
+
+    main.innerHTML = `
     <div class="page-header">
       <div class="page-title-group">
         <h1>Dashboard</h1>
@@ -317,13 +322,12 @@ function renderDashboard() {
         </div>
         <div class="data-table-wrap">
           <table>
-            <thead><tr><th>Month</th><th>Due</th><th>Done</th><th>Hrs</th></tr></thead>
+            <thead><tr><th>Month</th><th>Due</th><th>Done</th></tr></thead>
             <tbody>
               ${monthKeys.map(k => `<tr>
                 <td class="cell-primary cell-mono">${k}</td>
                 <td>${monthMap[k].due}</td>
-                <td><span style="color:${monthMap[k].comp>0?'var(--success)':'var(--text-muted)'};">${monthMap[k].comp}</span></td>
-                <td>${monthMap[k].actHrs}</td>
+                <td><span style="color:${monthMap[k].comp > 0 ? 'var(--success)' : 'var(--text-muted)'};">${monthMap[k].comp}</span></td>
               </tr>`).join('')}
             </tbody>
           </table>
@@ -341,7 +345,7 @@ function renderDashboard() {
             <tbody>
               ${stsOrder.map(k => `<tr>
                 <td>${statusBadge(k)}</td>
-                <td class="text-xs text-muted">${STATUS_MAP[k]?.action||'—'}</td>
+                <td class="text-xs text-muted">${STATUS_MAP[k]?.action || '—'}</td>
                 <td class="cell-primary">${stsCount[k]}</td>
               </tr>`).join('')}
             </tbody>
@@ -356,7 +360,7 @@ function renderDashboard() {
         </div>
         <div class="data-table-wrap">
           <table>
-            <thead><tr><th>Employee</th><th>Tasks</th><th>Hrs</th><th>⚠️</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Tasks</th><th>Done</th><th>⚠️</th></tr></thead>
             <tbody>
               ${Object.keys(empWork).map(n => `<tr>
                 <td>
@@ -366,8 +370,8 @@ function renderDashboard() {
                   </div>
                 </td>
                 <td>${empWork[n].tasks}</td>
-                <td>${empWork[n].actHrs}</td>
-                <td><span style="color:${empWork[n].overdue>0?'var(--danger)':'var(--text-muted)'};">${empWork[n].overdue}</span></td>
+                <td>${empWork[n].comp}</td>
+                <td><span style="color:${empWork[n].overdue > 0 ? 'var(--danger)' : 'var(--text-muted)'};">${empWork[n].overdue}</span></td>
               </tr>`).join('')}
             </tbody>
           </table>
@@ -376,184 +380,99 @@ function renderDashboard() {
     </div>
   `;
 
-  // Draw charts after render
-  setTimeout(() => {
-    const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
-    const gridColor = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
+    // Draw charts after render
+    setTimeout(() => {
+      const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+      const gridColor = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
 
-    safeChart('dashTrendChart', {
-      type: 'line',
-      data: {
-        labels: monthKeys,
-        datasets: [
-          { label: 'Tasks Due', data: monthKeys.map(k => monthMap[k].due),
-            borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.12)',
-            fill: true, tension: 0.4, pointRadius: 4, pointHoverRadius: 6 },
-          { label: 'Completed', data: monthKeys.map(k => monthMap[k].comp),
-            borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.08)',
-            fill: true, tension: 0.4, pointRadius: 4, pointHoverRadius: 6 }
-        ]
-      },
-      options: { responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { position: 'top' } },
-        scales: { x: { grid: { color: gridColor } }, y: { beginAtZero: true, grid: { color: gridColor } } } }
+      safeChart('dashTrendChart', {
+        type: 'line',
+        data: {
+          labels: monthKeys,
+          datasets: [
+            {
+              label: 'Tasks Due', data: monthKeys.map(k => monthMap[k].due),
+              borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.12)',
+              fill: true, tension: 0.4, pointRadius: 4, pointHoverRadius: 6
+            },
+            {
+              label: 'Completed', data: monthKeys.map(k => monthMap[k].comp),
+              borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.08)',
+              fill: true, tension: 0.4, pointRadius: 4, pointHoverRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: { x: { grid: { color: gridColor } }, y: { beginAtZero: true, grid: { color: gridColor } } }
+        }
+      });
+
+      safeChart('dashStatusChart', {
+        type: 'doughnut',
+        data: {
+          labels: stsOrder.filter(k => stsCount[k] > 0),
+          datasets: [{
+            data: stsOrder.filter(k => stsCount[k] > 0).map(k => stsCount[k]),
+            backgroundColor: stsOrder.filter(k => stsCount[k] > 0).map(k => STATUS_MAP[k]?.color || '#64748b'),
+            borderWidth: 2, borderColor: isDark ? '#0d1420' : '#f8fafc', hoverOffset: 6
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: '65%',
+          plugins: { legend: { position: 'bottom', labels: { padding: 12, usePointStyle: true } } }
+        }
+      });
+    }, 60);
+  }
+
+  // ======================================================
+  //  KANBAN BOARD VIEW
+  // ======================================================
+  function renderKanban() {
+    const main = document.getElementById('content');
+    const filterText = (document.getElementById('k-search')?.value || '').toLowerCase();
+    const filterPrio = document.getElementById('k-prio-filter')?.value || 'All';
+
+    const grouped = {};
+    KANBAN_COLS.forEach(c => grouped[c] = []);
+    State.tasks.forEach(t => {
+      const matchText = !filterText ||
+        (t.Title || '').toLowerCase().includes(filterText) ||
+        (t.AssignedTo || '').toLowerCase().includes(filterText) ||
+        (t.TaskID || '').toLowerCase().includes(filterText);
+      const matchPrio = filterPrio === 'All' || t.Priority === filterPrio;
+      if (!matchText || !matchPrio) return;
+
+      if (grouped[t.Status]) grouped[t.Status].push(t);
+      else grouped['Not Started'].push(t);
     });
 
-    safeChart('dashStatusChart', {
-      type: 'doughnut',
-      data: {
-        labels: stsOrder.filter(k => stsCount[k] > 0),
-        datasets: [{ data: stsOrder.filter(k => stsCount[k] > 0).map(k => stsCount[k]),
-          backgroundColor: stsOrder.filter(k => stsCount[k] > 0).map(k => STATUS_MAP[k]?.color || '#64748b'),
-          borderWidth: 2, borderColor: isDark ? '#0d1420' : '#f8fafc', hoverOffset: 6 }]
-      },
-      options: { responsive: true, maintainAspectRatio: false, cutout: '65%',
-        plugins: { legend: { position: 'bottom', labels: { padding: 12, usePointStyle: true } } } }
-    });
-  }, 60);
-}
-
-// ======================================================
-//  TASK TRACKER VIEW
-// ======================================================
-function renderTasks() {
-  const main = document.getElementById('content');
-  const filterText   = (document.getElementById('t-search')?.value || '').toLowerCase();
-  const filterStatus = document.getElementById('t-status-filter')?.value || 'All';
-  const filterPrio   = document.getElementById('t-prio-filter')?.value || 'All';
-
-  const filtered = State.tasks.filter(t => {
-    const matchText = !filterText ||
-      (t.Title||'').toLowerCase().includes(filterText) ||
-      (t.TaskID||'').toLowerCase().includes(filterText) ||
-      (t.AssignedTo||'').toLowerCase().includes(filterText) ||
-      (t.Project||'').toLowerCase().includes(filterText);
-    const matchStatus = filterStatus === 'All' || t.Status === filterStatus;
-    const matchPrio   = filterPrio === 'All' || t.Priority === filterPrio;
-    return matchText && matchStatus && matchPrio;
-  });
-
-  main.innerHTML = `
-    <div class="page-header">
-      <div class="page-title-group">
-        <h1>Task Tracker</h1>
-        <p>${filtered.length} of ${State.tasks.length} tasks</p>
-      </div>
-      <div class="page-actions">
-        <button class="btn btn-primary btn-sm" onclick="openModal()">
-          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          New Task
-        </button>
-      </div>
-    </div>
-
-    <div class="table-card">
-      <div class="table-header">
-        <div class="table-title">All Tasks</div>
-        <div class="table-filters">
-          <input type="text" id="t-search" class="input-glass" placeholder="🔍 Search tasks, IDs, assignees…" value="${filterText}" onkeyup="renderTasks()" style="min-width:220px;">
-          <select id="t-status-filter" class="input-glass" onchange="renderTasks()">
-            <option value="All">All Statuses</option>
-            ${Object.keys(STATUS_MAP).map(s => `<option value="${s}" ${filterStatus===s?'selected':''}>${s}</option>`).join('')}
-          </select>
-          <select id="t-prio-filter" class="input-glass" onchange="renderTasks()">
-            <option value="All">All Priorities</option>
-            ${Object.keys(PRIORITY_MAP).map(p => `<option value="${p}" ${filterPrio===p?'selected':''}>${p}</option>`).join('')}
-          </select>
-        </div>
-      </div>
-      <div class="data-table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th><th>Title</th><th>Project</th><th>Category</th>
-              <th>Assignee</th><th>Priority</th><th>Status</th><th>Action</th>
-              <th>Progress</th><th>Est Hrs</th><th>Act Hrs</th><th>Variance</th>
-              <th>Source</th><th>Due Date</th><th>Manager</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filtered.map(t => {
-              const isOd = t.OverdueFlag === 'Yes';
-              return `<tr class="${isOd?'row-overdue':''}" onclick="openModal('${t.TaskID}')" style="cursor:pointer;">
-                <td class="cell-mono text-xs text-muted">${t.TaskID}</td>
-                <td class="cell-primary" style="max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${t.Title}</td>
-                <td class="text-xs">${t.Project||'—'}</td>
-                <td class="text-xs">${t.Category||'—'}</td>
-                <td>
-                  <div style="display:flex;align-items:center;gap:0.4rem;">
-                    <div style="width:24px;height:24px;border-radius:50%;background:${getAvatarColor(t.AssignedTo)};display:flex;align-items:center;justify-content:center;font-size:0.6rem;font-weight:800;color:white;flex-shrink:0;">${getInitials(t.AssignedTo)}</div>
-                    <span class="text-xs">${t.AssignedTo||'—'}</span>
-                  </div>
-                </td>
-                <td>${priorityBadge(t.Priority)}</td>
-                <td>${statusBadge(t.Status)}</td>
-                <td class="text-xs text-muted">${STATUS_MAP[t.Status]?.action || t.ActionType || '—'}</td>
-                <td style="min-width:120px;">${progressBar(t.ProgressPercent)}</td>
-                <td class="text-xs">${roundNum(t.EstHours)}</td>
-                <td class="text-xs">${roundNum(t.ActualHours)}</td>
-                <td class="text-xs ${roundNum(t.HoursVariance)<0?'text-danger':'text-success'}">${t.HoursVariance !== '' && t.HoursVariance !== undefined && t.HoursVariance !== null ? roundNum(t.HoursVariance) : '—'}</td>
-                <td class="text-xs">${t.Source||'—'}</td>
-                <td class="text-xs ${isOd?'text-danger':''}">${formatDate(t.DueDate)}</td>
-                <td class="text-xs">${t.Manager||'—'}</td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
-
-  const el = document.getElementById('t-search');
-  if (el && filterText) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
-}
-
-// ======================================================
-//  KANBAN BOARD VIEW
-// ======================================================
-function renderKanban() {
-  const main = document.getElementById('content');
-  const filterText = (document.getElementById('k-search')?.value || '').toLowerCase();
-  const filterPrio  = document.getElementById('k-prio-filter')?.value || 'All';
-
-  const grouped = {};
-  KANBAN_COLS.forEach(c => grouped[c] = []);
-  State.tasks.forEach(t => {
-    const matchText = !filterText ||
-      (t.Title||'').toLowerCase().includes(filterText) ||
-      (t.AssignedTo||'').toLowerCase().includes(filterText) ||
-      (t.TaskID||'').toLowerCase().includes(filterText);
-    const matchPrio = filterPrio === 'All' || t.Priority === filterPrio;
-    if (!matchText || !matchPrio) return;
-
-    if (grouped[t.Status]) grouped[t.Status].push(t);
-    else grouped['Not Started'].push(t);
-  });
-
-  // Build team avatar stack from distinct assignees (up to 6)
-  const assignees = [...new Set(State.tasks.map(t => t.AssignedTo).filter(Boolean))].slice(0, 6);
-  const avatarStack = assignees.map(name => `
+    // Build team avatar stack from distinct assignees (up to 6)
+    const assignees = [...new Set(State.tasks.map(t => t.AssignedTo).filter(Boolean))].slice(0, 6);
+    const avatarStack = assignees.map(name => `
     <div class="k-avatar" title="${name}"
          style="background:${getAvatarColor(name)}"
          onclick="document.getElementById('k-search').value='${name}'; renderKanban();">
       ${getInitials(name)}
     </div>`).join('');
 
-  // Priority icon class helper
-  function priorityIconClass(p) {
-    if (p === 'Critical') return 'kp-critical';
-    if (p === 'High')     return 'kp-high';
-    if (p === 'Medium')   return 'kp-medium';
-    return 'kp-low';
-  }
+    // Priority icon class helper
+    function priorityIconClass(p) {
+      if (p === 'Critical') return 'kp-critical';
+      if (p === 'High') return 'kp-high';
+      if (p === 'Medium') return 'kp-medium';
+      return 'kp-low';
+    }
 
-  const cols = KANBAN_COLS.map(col => {
-    const colTotal = State.tasks.filter(t => t.Status === col).length;
-    const cards = grouped[col].map(t => `
+    const cols = KANBAN_COLS.map(col => {
+      const colTotal = State.tasks.filter(t => t.Status === col).length;
+      const cards = grouped[col].map(t => `
       <div class="kanban-card" draggable="true" id="card-${t.TaskID}"
            ondragstart="handleDragStart(event,'${t.TaskID}')"
            title="Drag to move column">
-        ${t.OverdueFlag === 'Yes' ? '<div class="kanban-overdue-dot"></div>' : ''}
+        ${(t.Status !== 'Completed' && t.Status !== 'Cancelled' && t.DueDate && new Date(t.DueDate) < new Date()) ? '<div class="kanban-overdue-dot"></div>' : ''}
         <div class="kanban-card-title" onclick="openModal('${t.TaskID}')">${t.Title || 'Untitled Task'}</div>
         <div style="font-size: 0.75rem; color: var(--text-muted); margin: 0.5rem 0; line-height: 1.3;">
           ${t.Description ? t.Description.substring(0, 60) + (t.Description.length > 60 ? '...' : '') : '<em style="opacity: 0.5;">No description</em>'}
@@ -577,21 +496,21 @@ function renderKanban() {
         </div>
       </div>`).join('');
 
-    return `
+      return `
       <div class="kanban-col" data-status="${col}"
            ondragover="allowDrop(event)" ondrop="handleDrop(event)" ondragleave="handleDragLeave(event)">
         <div class="kanban-col-header">
           <div class="kanban-col-title">
-            <div style="width:8px;height:8px;border-radius:50%;background:${STATUS_MAP[col]?.color||'#64748b'};flex-shrink:0;"></div>
+            <div style="width:8px;height:8px;border-radius:50%;background:${STATUS_MAP[col]?.color || '#64748b'};flex-shrink:0;"></div>
             ${col.toUpperCase()}
           </div>
           <span class="kanban-col-count-badge">${grouped[col].length} OF ${colTotal}</span>
         </div>
         <div class="kanban-col-body">${cards || '<div class="kanban-empty-col">Drop tasks here</div>'}</div>
       </div>`;
-  }).join('');
+    }).join('');
 
-  main.innerHTML = `
+    main.innerHTML = `
     <div class="page-header">
       <div class="page-title-group">
         <h1>Kanban Board</h1>
@@ -612,7 +531,7 @@ function renderKanban() {
       <div class="kanban-toolbar-right">
         <select id="k-prio-filter" class="input-glass" onchange="renderKanban()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">
           <option value="All">All Priorities</option>
-          ${Object.keys(PRIORITY_MAP).map(p => `<option value="${p}" ${filterPrio===p?'selected':''}>${p}</option>`).join('')}
+          ${Object.keys(PRIORITY_MAP).map(p => `<option value="${p}" ${filterPrio === p ? 'selected' : ''}>${p}</option>`).join('')}
         </select>
         <button class="btn btn-primary btn-sm" onclick="openModal()">
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -624,76 +543,76 @@ function renderKanban() {
     </div>
     <div class="kanban-board">${cols}</div>`;
 
-  const el = document.getElementById('k-search');
-  if (el && filterText) el.focus();
-}
+    const el = document.getElementById('k-search');
+    if (el && filterText) el.focus();
+  }
 
-let _dragId = null;
-function handleDragStart(e, id) {
-  _dragId = id;
-  e.dataTransfer.effectAllowed = 'move';
-  e.target.classList.add('dragging');
-}
-function allowDrop(e) {
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-  e.currentTarget.closest('.kanban-col')?.classList.add('drag-over');
-}
-function handleDragLeave(e) {
-  e.currentTarget.closest('.kanban-col')?.classList.remove('drag-over');
-}
-async function handleDrop(e) {
-  e.preventDefault();
-  document.querySelectorAll('.kanban-col').forEach(c => c.classList.remove('drag-over'));
-  const id = _dragId || e.dataTransfer.getData('text/plain');
-  const col = e.currentTarget.closest('.kanban-col');
-  if (!col || !id) return;
-  const newStatus = col.getAttribute('data-status');
-  const t = State.tasks.find(x => x.TaskID === id);
-  if (!t || t.Status === newStatus) return;
-  t.Status = newStatus;
-  t.ActionType = STATUS_MAP[newStatus]?.action || '';
-  if (newStatus === 'Completed') { t.ProgressPercent = 100; t.CompletedDate = new Date().toISOString(); }
-  renderKanban();
-  try { await callServer('updateTaskStatus', id, newStatus); }
-  catch(err) { console.warn('Status sync failed:', err); }
-}
-document.addEventListener('dragend', e => {
-  document.querySelectorAll('.kanban-card').forEach(c => c.classList.remove('dragging'));
-  _dragId = null;
-});
+  let _dragId = null;
+  function handleDragStart(e, id) {
+    _dragId = id;
+    e.dataTransfer.effectAllowed = 'move';
+    e.target.classList.add('dragging');
+  }
+  function allowDrop(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    e.currentTarget.closest('.kanban-col')?.classList.add('drag-over');
+  }
+  function handleDragLeave(e) {
+    e.currentTarget.closest('.kanban-col')?.classList.remove('drag-over');
+  }
+  async function handleDrop(e) {
+    e.preventDefault();
+    document.querySelectorAll('.kanban-col').forEach(c => c.classList.remove('drag-over'));
+    const id = _dragId || e.dataTransfer.getData('text/plain');
+    const col = e.currentTarget.closest('.kanban-col');
+    if (!col || !id) return;
+    const newStatus = col.getAttribute('data-status');
+    const t = State.tasks.find(x => x.TaskID === id);
+    if (!t || t.Status === newStatus) return;
+    t.Status = newStatus;
+    t.ActionType = STATUS_MAP[newStatus]?.action || '';
+    if (newStatus === 'Completed') { t.ProgressPercent = 100; t.CompletedDate = new Date().toISOString(); }
+    renderKanban();
+    try { await callServer('updateTaskStatus', id, newStatus); }
+    catch (err) { console.warn('Status sync failed:', err); }
+  }
+  document.addEventListener('dragend', e => {
+    document.querySelectorAll('.kanban-card').forEach(c => c.classList.remove('dragging'));
+    _dragId = null;
+  });
 
-// ======================================================
-//  REPORTS VIEW
-// ======================================================
-function setSubView(sub) { State.activeSubView = sub; renderReports(); }
+  // ======================================================
+  //  REPORTS VIEW
+  // ======================================================
+  function setSubView(sub) { State.activeSubView = sub; renderReports(); }
 
-function renderReports() {
-  const main = document.getElementById('content');
-  const subViews = [
-    { key: 'employee', label: '👤 Employee Report' },
-    { key: 'monthly',  label: '📅 Monthly Summary' },
-    { key: 'manager',  label: '🏢 Manager Report'  },
-    { key: 'visual',   label: '📊 Visual Analytics' }
-  ];
+  function renderReports() {
+    const main = document.getElementById('content');
+    const subViews = [
+      { key: 'employee', label: '👤 Employee Report' },
+      { key: 'monthly', label: '📅 Monthly Summary' },
+      { key: 'manager', label: '🏢 Manager Report' },
+      { key: 'visual', label: '📊 Visual Analytics' }
+    ];
 
-  const tabs = `
+    const tabs = `
     <div class="tab-nav">
       ${subViews.map(v => `
-        <button class="tab-btn ${State.activeSubView===v.key?'active':''}" onclick="setSubView('${v.key}')">
+        <button class="tab-btn ${State.activeSubView === v.key ? 'active' : ''}" onclick="setSubView('${v.key}')">
           ${v.label}
         </button>`).join('')}
     </div>`;
 
-  destroyCharts();
+    destroyCharts();
 
-  let body = '';
-  if (State.activeSubView === 'employee')  body = buildEmployeeReport();
-  if (State.activeSubView === 'monthly')   body = buildMonthlyReport();
-  if (State.activeSubView === 'manager')   body = buildManagerReport();
-  if (State.activeSubView === 'visual')    body = buildVisualAnalytics();
+    let body = '';
+    if (State.activeSubView === 'employee') body = buildEmployeeReport();
+    if (State.activeSubView === 'monthly') body = buildMonthlyReport();
+    if (State.activeSubView === 'manager') body = buildManagerReport();
+    if (State.activeSubView === 'visual') body = buildVisualAnalytics();
 
-  main.innerHTML = `
+    main.innerHTML = `
     <div class="page-header">
       <div class="page-title-group">
         <h1>Reports & Analytics</h1>
@@ -703,50 +622,50 @@ function renderReports() {
     ${tabs}
     ${body}`;
 
-  // Draw charts after DOM update
-  setTimeout(() => drawReportCharts(), 60);
-}
+    // Draw charts after DOM update
+    setTimeout(() => drawReportCharts(), 60);
+  }
 
-/* ── EMPLOYEE REPORT ── */
-function buildEmployeeReport() {
-  const empNames = State.employees.map(e => e.Name);
-  const selEmp = document.getElementById('r-emp-sel')?.value || (empNames[0] || '');
-  const profile = State.employees.find(e => e.Name === selEmp) || {};
-  const empTasks = State.tasks.filter(t => t.AssignedTo === selEmp);
+  /* ── EMPLOYEE REPORT ── */
+  function buildEmployeeReport() {
+    const empNames = State.employees.map(e => e.Name);
+    const selEmp = document.getElementById('r-emp-sel')?.value || (empNames[0] || '');
+    const profile = State.employees.find(e => e.Name === selEmp) || {};
+    const empTasks = State.tasks.filter(t => t.AssignedTo === selEmp);
 
-  const total = empTasks.length;
-  const comp  = empTasks.filter(t => t.Status === 'Completed').length;
-  const open  = total - comp;
-  const over  = empTasks.filter(t => t.OverdueFlag === 'Yes').length;
-  const estH  = empTasks.reduce((s,t) => s + roundNum(t.EstHours), 0);
-  const actH  = empTasks.reduce((s,t) => s + roundNum(t.ActualHours), 0);
-  const compRate = total > 0 ? Math.round((comp/total)*100) : 0;
+    const total = empTasks.length;
+    const comp = empTasks.filter(t => t.Status === 'Completed').length;
+    const open = total - comp;
+    const over = empTasks.filter(t => t.OverdueFlag === 'Yes').length;
+    const estH = empTasks.reduce((s, t) => s + roundNum(t.EstHours), 0);
+    const actH = empTasks.reduce((s, t) => s + roundNum(t.ActualHours), 0);
+    const compRate = total > 0 ? Math.round((comp / total) * 100) : 0;
 
-  const kpis = [
-    { label: 'Total Tasks', value: total, color: '#6366f1' },
-    { label: 'Open Tasks', value: open, color: '#3b82f6' },
-    { label: 'Completed', value: comp, color: '#10b981' },
-    { label: 'Overdue', value: over, color: '#ef4444' },
-    { label: 'Est. Hours', value: estH.toFixed(1), color: '#8b5cf6' },
-    { label: 'Actual Hours', value: actH.toFixed(1), color: '#14b8a6' }
-  ];
+    const kpis = [
+      { label: 'Total Tasks', value: total, color: '#6366f1' },
+      { label: 'Open Tasks', value: open, color: '#3b82f6' },
+      { label: 'Completed', value: comp, color: '#10b981' },
+      { label: 'Overdue', value: over, color: '#ef4444' },
+      { label: 'Est. Hours', value: estH.toFixed(1), color: '#8b5cf6' },
+      { label: 'Actual Hours', value: actH.toFixed(1), color: '#14b8a6' }
+    ];
 
-  return `
+    return `
     <div class="section-card" style="margin-bottom:1.5rem;">
       <div class="section-card-header">
         <div style="font-weight:700;">👤 Employee Report — ${selEmp || 'Select Employee'}</div>
         <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
           <select id="r-emp-sel" class="input-glass" onchange="renderReports()">
-            ${empNames.map(n => `<option value="${n}" ${n===selEmp?'selected':''}>${n}</option>`).join('')}
+            ${empNames.map(n => `<option value="${n}" ${n === selEmp ? 'selected' : ''}>${n}</option>`).join('')}
           </select>
         </div>
       </div>
       <!-- Profile Row -->
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;padding:1.25rem;border-bottom:1px solid var(--border-subtle);">
-        <div><div class="kpi-label">Department</div><div class="fw-600">${profile.Department||'—'}</div></div>
-        <div><div class="kpi-label">Role</div><div class="fw-600">${profile.Role||'—'}</div></div>
-        <div><div class="kpi-label">Manager</div><div class="fw-600">${profile.Manager||'—'}</div></div>
-        <div><div class="kpi-label">Capacity / Week</div><div class="fw-600">${profile.WeeklyCapacity||40} hrs</div></div>
+        <div><div class="kpi-label">Department</div><div class="fw-600">${profile.Department || '—'}</div></div>
+        <div><div class="kpi-label">Role</div><div class="fw-600">${profile.Role || '—'}</div></div>
+        <div><div class="kpi-label">Manager</div><div class="fw-600">${profile.Manager || '—'}</div></div>
+        <div><div class="kpi-label">Capacity / Week</div><div class="fw-600">${profile.WeeklyCapacity || 40} hrs</div></div>
       </div>
     </div>
 
@@ -783,77 +702,76 @@ function buildEmployeeReport() {
         <table>
           <thead><tr><th>ID</th><th>Project</th><th>Title</th><th>Status</th><th>Priority</th><th>Progress</th><th>Est Hrs</th><th>Act Hrs</th><th>Source</th><th>Due Date</th><th>Next Step</th></tr></thead>
           <tbody>
-            ${empTasks.map(t => `<tr class="${t.OverdueFlag==='Yes'?'row-overdue':''}" onclick="openModal('${t.TaskID}')" style="cursor:pointer;">
+            ${empTasks.map(t => `<tr class="${t.OverdueFlag === 'Yes' ? 'row-overdue' : ''}" onclick="openModal('${t.TaskID}')" style="cursor:pointer;">
               <td class="cell-mono text-xs text-muted">${t.TaskID}</td>
-              <td class="text-xs">${t.Project||'—'}</td>
+              <td class="text-xs">${t.Project || '—'}</td>
               <td class="cell-primary text-xs">${t.Title}</td>
               <td>${statusBadge(t.Status)}</td>
               <td>${priorityBadge(t.Priority)}</td>
               <td style="min-width:100px;">${progressBar(t.ProgressPercent)}</td>
               <td class="text-xs">${roundNum(t.EstHours)}</td>
               <td class="text-xs">${roundNum(t.ActualHours)}</td>
-              <td class="text-xs">${t.Source||'—'}</td>
-              <td class="text-xs ${t.OverdueFlag==='Yes'?'text-danger':''}">${formatDate(t.DueDate)}</td>
-              <td class="text-xs text-muted" style="max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.NextStep||'—'}</td>
+              <td class="text-xs">${t.Source || '—'}</td>
+              <td class="text-xs ${t.OverdueFlag === 'Yes' ? 'text-danger' : ''}">${formatDate(t.DueDate)}</td>
+              <td class="text-xs text-muted" style="max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.NextStep || '—'}</td>
             </tr>`).join('')}
           </tbody>
         </table>
       </div>
     </div>`;
-}
+  }
 
-/* ── MONTHLY REPORT ── */
-function buildMonthlyReport() {
-  const allMonthKeys = [...new Set(State.tasks
-    .filter(t => t.DueDate)
-    .map(t => { const d = new Date(t.DueDate); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; })
-  )].sort().reverse();
+  /* ── MONTHLY REPORT ── */
+  function buildMonthlyReport() {
+    const allMonthKeys = [...new Set(State.tasks
+      .filter(t => t.DueDate)
+      .map(t => { const d = new Date(t.DueDate); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; })
+    )].sort().reverse();
 
-  const selMo = document.getElementById('r-mo-sel')?.value || (allMonthKeys[0] || '');
-  const monthStart = selMo ? new Date(selMo + '-01') : new Date();
+    const selMo = document.getElementById('r-mo-sel')?.value || (allMonthKeys[0] || '');
+    const monthStart = selMo ? new Date(selMo + '-01') : new Date();
 
-  let due=0, comp=0, cfOpen=0, actH=0;
-  const empStats = {};
-  State.employees.forEach(e => empStats[e.Name] = { dept: e.Department, due:0, comp:0, open:0, cf:0, estH:0, actH:0 });
+    let due = 0, comp = 0, cfOpen = 0, actH = 0;
+    const empStats = {};
+    State.employees.forEach(e => empStats[e.Name] = { dept: e.Department, due: 0, comp: 0, open: 0, cf: 0, estH: 0, actH: 0 });
 
-  State.tasks.forEach(t => {
-    if (!t.DueDate) return;
-    const d = new Date(t.DueDate);
-    const tKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    const ongoing = t.Status !== 'Completed' && t.Status !== 'Cancelled';
+    State.tasks.forEach(t => {
+      if (!t.DueDate) return;
+      const d = new Date(t.DueDate);
+      const tKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const ongoing = t.Status !== 'Completed' && t.Status !== 'Cancelled';
 
-    if (tKey === selMo) {
-      due++;
-      if (t.Status === 'Completed') comp++;
-      else if (empStats[t.AssignedTo]) empStats[t.AssignedTo].open++;
-      actH += roundNum(t.ActualHours);
-      if (empStats[t.AssignedTo]) {
-        empStats[t.AssignedTo].due++;
-        if (t.Status === 'Completed') empStats[t.AssignedTo].comp++;
-        empStats[t.AssignedTo].actH += roundNum(t.ActualHours);
-        empStats[t.AssignedTo].estH += roundNum(t.EstHours);
+      if (tKey === selMo) {
+        due++;
+        if (t.Status === 'Completed') comp++;
+        else if (empStats[t.AssignedTo]) empStats[t.AssignedTo].open++;
+        actH += roundNum(t.ActualHours);
+        if (empStats[t.AssignedTo]) {
+          empStats[t.AssignedTo].due++;
+          if (t.Status === 'Completed') empStats[t.AssignedTo].comp++;
+          empStats[t.AssignedTo].actH += roundNum(t.ActualHours);
+          empStats[t.AssignedTo].estH += roundNum(t.EstHours);
+        }
+      } else if (d < monthStart && ongoing) {
+        cfOpen++;
+        if (empStats[t.AssignedTo]) empStats[t.AssignedTo].cf++;
       }
-    } else if (d < monthStart && ongoing) {
-      cfOpen++;
-      if (empStats[t.AssignedTo]) empStats[t.AssignedTo].cf++;
-    }
-  });
+    });
 
-  return `
+    return `
     <div class="section-card" style="margin-bottom:1.5rem;">
       <div class="section-card-header">
-        <div style="font-weight:700;">📅 Monthly Report — ${selMo||'—'}</div>
+        <div style="font-weight:700;">📅 Monthly Report — ${selMo || '—'}</div>
         <select id="r-mo-sel" class="input-glass" onchange="renderReports()">
-          ${allMonthKeys.map(k => `<option value="${k}" ${k===selMo?'selected':''}>${k}</option>`).join('')}
+          ${allMonthKeys.map(k => `<option value="${k}" ${k === selMo ? 'selected' : ''}>${k}</option>`).join('')}
         </select>
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1.25rem;margin-bottom:1.5rem;">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1.25rem;margin-bottom:1.5rem;">
       <div class="kpi-card"><div class="kpi-label">Tasks Due</div><div class="kpi-value" style="color:#6366f1;">${due}</div></div>
       <div class="kpi-card"><div class="kpi-label">Completed</div><div class="kpi-value" style="color:#10b981;">${comp}</div></div>
-      <div class="kpi-card"><div class="kpi-label">Carry Forward</div><div class="kpi-value" style="color:#ef4444;">${cfOpen}</div></div>
-      <div class="kpi-card"><div class="kpi-label">Actual Hours</div><div class="kpi-value" style="color:#14b8a6;">${actH.toFixed(1)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Carry Forward Open</div><div class="kpi-value" style="color:#ef4444;">${cfOpen}</div></div>
     </div>
 
     <div class="charts-grid" style="grid-template-columns:2fr 1fr;margin-bottom:1.5rem;">
@@ -873,77 +791,59 @@ function buildMonthlyReport() {
       <div class="table-header"><div class="table-title">Employee Summary — ${selMo}</div></div>
       <div class="data-table-wrap">
         <table>
-          <thead><tr><th>Employee</th><th>Department</th><th>Tasks Due</th><th>Completed</th><th>Open</th><th>Carry Fwd</th><th>Est Hrs</th><th>Act Hrs</th><th>Completion %</th></tr></thead>
+          <thead><tr><th>Employee</th><th>Role</th><th>Tasks Due</th><th>Completed</th><th>Open</th><th>Completion %</th></tr></thead>
           <tbody>
             ${Object.keys(empStats).map(n => {
-              const e = empStats[n];
-              const pct = e.due > 0 ? Math.round((e.comp/e.due)*100) : 0;
-              return `<tr>
+      const e = empStats[n];
+      const pct = e.due > 0 ? Math.round((e.comp / e.due) * 100) : 0;
+      return `<tr>
                 <td class="cell-primary text-xs">${n}</td>
-                <td class="text-xs">${e.dept||'—'}</td>
+                <td class="text-xs">${e.role || '—'}</td>
                 <td class="text-xs">${e.due}</td>
                 <td class="text-xs" style="color:var(--success);">${e.comp}</td>
                 <td class="text-xs">${e.open}</td>
-                <td class="text-xs" style="color:${e.cf>0?'var(--danger)':'var(--text-muted)'};">${e.cf}</td>
-                <td class="text-xs">${e.estH.toFixed(1)}</td>
-                <td class="text-xs">${e.actH.toFixed(1)}</td>
-                <td style="min-width:130px;">${progressBar(pct, pct>=80?'#10b981':'#f59e0b')}</td>
+                <td style="min-width:130px;">${progressBar(pct, pct >= 80 ? '#10b981' : '#f59e0b')}</td>
               </tr>`;
-            }).join('')}
+    }).join('')}
           </tbody>
         </table>
       </div>
     </div>`;
-}
+  }
 
-/* ── MANAGER REPORT ── */
-function buildManagerReport() {
-  const mgrs = [...new Set(State.employees.map(e => e.Manager).filter(Boolean))];
-  const selMgr = document.getElementById('r-mgr-sel')?.value || (mgrs[0] || '');
-  const team = State.employees.filter(e => e.Manager === selMgr).map(e => e.Name);
-  const mgrTasks = State.tasks.filter(t => team.includes(t.AssignedTo) || t.Manager === selMgr);
+  /* ── MANAGER REPORT ── */
+  function buildManagerReport() {
+    const team = State.employees.map(e => e.Name);
+    const mgrTasks = State.tasks;
 
-  const total = mgrTasks.length;
-  const comp  = mgrTasks.filter(t => t.Status === 'Completed').length;
-  const open  = total - comp;
-  const over  = mgrTasks.filter(t => t.OverdueFlag === 'Yes').length;
-  const actH  = mgrTasks.reduce((s,t) => s + roundNum(t.ActualHours), 0);
-  const estH  = mgrTasks.reduce((s,t) => s + roundNum(t.EstHours), 0);
+    const total = mgrTasks.length;
+    const comp = mgrTasks.filter(t => t.Status === 'Completed').length;
+    const open = total - comp;
 
-  // Per-member breakdown
-  const memberData = {};
-  team.forEach(n => memberData[n] = { tasks:0,comp:0,over:0,actH:0,estH:0 });
-  mgrTasks.forEach(t => {
-    if (!memberData[t.AssignedTo]) return;
-    memberData[t.AssignedTo].tasks++;
-    if (t.Status === 'Completed') memberData[t.AssignedTo].comp++;
-    if (t.OverdueFlag === 'Yes') memberData[t.AssignedTo].over++;
-    memberData[t.AssignedTo].actH += roundNum(t.ActualHours);
-    memberData[t.AssignedTo].estH += roundNum(t.EstHours);
-  });
+    // Per-member breakdown
+    const memberData = {};
+    team.forEach(n => memberData[n] = { tasks: 0, comp: 0 });
+    mgrTasks.forEach(t => {
+      if (!memberData[t.AssignedTo]) return;
+      memberData[t.AssignedTo].tasks++;
+      if (t.Status === 'Completed') memberData[t.AssignedTo].comp++;
+    });
 
-  return `
+    return `
     <div class="section-card" style="margin-bottom:1.5rem;">
       <div class="section-card-header">
-        <div style="font-weight:700;">🏢 Manager Report — ${selMgr||'—'}</div>
-        <div style="display:flex;align-items:center;gap:0.75rem;">
-          <select id="r-mgr-sel" class="input-glass" onchange="renderReports()">
-            ${mgrs.map(m => `<option value="${m}" ${m===selMgr?'selected':''}>${m}</option>`).join('')}
-          </select>
-        </div>
+        <div style="font-weight:700;">📊 Team Performance Report</div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;padding:1.25rem;border-bottom:1px solid var(--border-subtle);">
-        <div><div class="kpi-label">Team Members</div><div class="fw-600 text-accent">${team.length}</div></div>
-        <div><div class="kpi-label">Task Source Count</div><div class="fw-600">${new Set(mgrTasks.map(t=>t.Source).filter(Boolean)).size}</div></div>
-        <div><div class="kpi-label">Month Filter</div><div class="fw-600">All</div></div>
-        <div><div class="kpi-label">Completion Rate</div><div class="fw-600" style="color:var(--success);">${total>0?Math.round((comp/total)*100):0}%</div></div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;padding:1.25rem;border-bottom:1px solid var(--border-subtle);">
+        <div><div class="kpi-label">Total Team Size</div><div class="fw-600 text-accent">${team.length}</div></div>
+        <div><div class="kpi-label">Active Tasks</div><div class="fw-600">${open}</div></div>
+        <div><div class="kpi-label">Global Completion</div><div class="fw-600" style="color:var(--success);">${total > 0 ? Math.round((comp / total) * 100) : 0}%</div></div>
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:1rem;margin-bottom:1.5rem;">
-      ${[['Total Tasks',total,'#6366f1'],['Open Tasks',open,'#3b82f6'],['Completed',comp,'#10b981'],
-         ['Overdue',over,'#ef4444'],['Task Hours',actH.toFixed(1),'#14b8a6'],['Est Hours',estH.toFixed(1),'#8b5cf6']
-      ].map(([l,v,c]) => `<div class="kpi-card" style="text-align:center;padding:1rem;"><div class="kpi-label">${l}</div><div class="kpi-value" style="font-size:1.4rem;color:${c};">${v}</div></div>`).join('')}
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.5rem;">
+      ${[['Total Tasks', total, '#6366f1'], ['Open Tasks', open, '#3b82f6'], ['Completed', comp, '#10b981']
+      ].map(([l, v, c]) => `<div class="kpi-card" style="text-align:center;padding:1rem;"><div class="kpi-label">${l}</div><div class="kpi-value" style="font-size:1.4rem;color:${c};">${v}</div></div>`).join('')}
     </div>
 
     <div class="charts-grid" style="grid-template-columns:1fr 1fr;margin-bottom:1.5rem;">
@@ -960,60 +860,52 @@ function buildManagerReport() {
     </div>
 
     <div class="table-card" style="margin-bottom:1.5rem;">
-      <div class="table-header"><div class="table-title">Team Member Summary</div></div>
+      <div class="table-header"><div class="table-title">Employee Task Summary</div></div>
       <div class="data-table-wrap">
         <table>
-          <thead><tr><th>Employee</th><th>Tasks</th><th>Completed</th><th>Overdue</th><th>Actual Hrs</th><th>Completion %</th></tr></thead>
+          <thead><tr><th>Employee</th><th>Tasks</th><th>Completed</th><th>Completion %</th></tr></thead>
           <tbody>
             ${Object.keys(memberData).map(n => {
-              const d = memberData[n];
-              const pct = d.tasks > 0 ? Math.round((d.comp/d.tasks)*100) : 0;
-              return `<tr>
+        const d = memberData[n];
+        const pct = d.tasks > 0 ? Math.round((d.comp / d.tasks) * 100) : 0;
+        return `<tr>
                 <td><div style="display:flex;align-items:center;gap:0.5rem;">
                   <div style="width:28px;height:28px;border-radius:50%;background:${getAvatarColor(n)};display:flex;align-items:center;justify-content:center;font-size:0.65rem;font-weight:800;color:white;">${getInitials(n)}</div>
                   <span class="cell-primary">${n}</span>
                 </div></td>
                 <td>${d.tasks}</td>
                 <td style="color:var(--success);">${d.comp}</td>
-                <td style="color:${d.over>0?'var(--danger)':'var(--text-muted)'};">${d.over}</td>
-                <td>${d.actH.toFixed(1)}</td>
                 <td style="min-width:130px;">${progressBar(pct)}</td>
               </tr>`;
-            }).join('')}
+      }).join('')}
           </tbody>
         </table>
       </div>
     </div>
 
     <div class="table-card">
-      <div class="table-header"><div class="table-title">Manager Task Detail</div></div>
+      <div class="table-header"><div class="table-title">Recent Tasks</div></div>
       <div class="data-table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Employee</th><th>Project</th><th>Title</th><th>Status</th><th>Priority</th><th>Due Date</th><th>Act Hrs</th><th>Next Step</th></tr></thead>
+          <thead><tr><th>ID</th><th>Assigned To</th><th>Title</th><th>Status</th><th>Priority</th><th>Due Date</th></tr></thead>
           <tbody>
-            ${mgrTasks.slice(0,50).map(t => `<tr class="${t.OverdueFlag==='Yes'?'row-overdue':''}" onclick="openModal('${t.TaskID}')" style="cursor:pointer;">
+            ${mgrTasks.slice(0, 50).map(t => `<tr onclick="openModal('${t.TaskID}')" style="cursor:pointer;">
               <td class="cell-mono text-xs text-muted">${t.TaskID}</td>
               <td class="text-xs">${t.AssignedTo}</td>
-              <td class="text-xs">${t.Project||'—'}</td>
               <td class="cell-primary text-xs">${t.Title}</td>
               <td>${statusBadge(t.Status)}</td>
               <td>${priorityBadge(t.Priority)}</td>
-              <td class="text-xs ${t.OverdueFlag==='Yes'?'text-danger':''}">${formatDate(t.DueDate)}</td>
-              <td class="text-xs">${roundNum(t.ActualHours)}</td>
-              <td class="text-xs text-muted" style="max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.NextStep||'—'}</td>
+              <td class="text-xs">${formatDate(t.DueDate)}</td>
             </tr>`).join('')}
           </tbody>
         </table>
       </div>
     </div>`;
-}
+  }
 
-/* ── VISUAL ANALYTICS ── */
-function buildVisualAnalytics() {
-  const empNames = State.employees.map(e => e.Name);
-  const estByEmp = empNames.map(n => State.tasks.filter(t=>t.AssignedTo===n).reduce((s,t)=>s+roundNum(t.EstHours),0));
-  const actByEmp = empNames.map(n => State.tasks.filter(t=>t.AssignedTo===n).reduce((s,t)=>s+roundNum(t.ActualHours),0));
-  return `
+  /* ── VISUAL ANALYTICS ── */
+  function buildVisualAnalytics() {
+    return `
     <div class="charts-grid" style="grid-template-columns:1fr 1fr;margin-bottom:1.5rem;">
       <div class="chart-card">
         <div class="chart-title">Status Distribution</div>
@@ -1026,467 +918,578 @@ function buildVisualAnalytics() {
         <div class="chart-canvas-wrap-tall"><canvas id="visPriorityBar"></canvas></div>
       </div>
     </div>
-    <div class="charts-grid" style="grid-template-columns:2fr 1fr;">
+    <div class="charts-grid" style="grid-template-columns:1fr;">
       <div class="chart-card">
-        <div class="chart-title">Employee Utilization</div>
-        <div class="chart-subtitle">Estimated vs actual hours per person</div>
+        <div class="chart-title">Team Progress</div>
+        <div class="chart-subtitle">Tasks assigned per member</div>
         <div class="chart-canvas-wrap-tall"><canvas id="visEmpBar"></canvas></div>
       </div>
-      <div class="chart-card">
-        <div class="chart-title">Category Mix</div>
-        <div class="chart-subtitle">Tasks by work category</div>
-        <div class="chart-canvas-wrap-tall"><canvas id="visCategoryPie"></canvas></div>
-      </div>
     </div>`;
-}
-
-/* ── CHART RENDERER FOR REPORTS ── */
-function drawReportCharts() {
-  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
-  const gridColor = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
-  chartDefaults();
-
-  const sub = State.activeSubView;
-
-  if (sub === 'employee') {
-    const selEmp = document.getElementById('r-emp-sel')?.value || '';
-    const empTasks = State.tasks.filter(t => t.AssignedTo === selEmp);
-    const stsOrder2 = Object.keys(STATUS_MAP);
-    const stsCounts = stsOrder2.map(s => empTasks.filter(t => t.Status === s).length);
-
-    safeChart('empStatusBar', {
-      type: 'bar',
-      data: { labels: stsOrder2,
-        datasets: [{ label: 'Tasks', data: stsCounts,
-          backgroundColor: stsOrder2.map(s => STATUS_MAP[s].color + '99'),
-          borderColor: stsOrder2.map(s => STATUS_MAP[s].color),
-          borderWidth: 2, borderRadius: 6 }] },
-      options: { responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { color: gridColor }, ticks: { stepSize: 1 } } } }
-    });
-
-    const actH = empTasks.reduce((s,t)=>s+roundNum(t.ActualHours),0);
-    const estH = empTasks.reduce((s,t)=>s+roundNum(t.EstHours),0);
-    safeChart('empEffortDoughnut', {
-      type: 'doughnut',
-      data: { labels: ['Actual Hours', 'Remaining Est.'],
-        datasets: [{ data: [actH, Math.max(0, estH - actH)],
-          backgroundColor: ['#6366f1bb', 'rgba(255,255,255,0.06)'],
-          borderColor: ['#6366f1', isDark ? '#1e293b' : '#f8fafc'],
-          borderWidth: 2 }] },
-      options: { responsive: true, maintainAspectRatio: false, cutout: '70%',
-        plugins: { legend: { position: 'bottom' } } }
-    });
   }
 
-  if (sub === 'monthly') {
-    const allMoKeys = [...new Set(State.tasks.filter(t=>t.DueDate).map(t => {
-      const d = new Date(t.DueDate);
-      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    }))].sort();
-    const moData = {};
-    allMoKeys.forEach(k => moData[k] = { due:0, comp:0, cf:0 });
-    State.tasks.forEach(t => {
-      if (!t.DueDate) return;
-      const d = new Date(t.DueDate);
-      const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-      if (moData[k]) {
-        moData[k].due++;
-        if (t.Status === 'Completed') moData[k].comp++;
-      }
-    });
+  /* ── CHART RENDERER FOR REPORTS ── */
+  function drawReportCharts() {
+    const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+    const gridColor = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
+    chartDefaults();
 
-    safeChart('monthTrendLine', {
-      type: 'line',
-      data: { labels: allMoKeys,
-        datasets: [
-          { label: 'Tasks Due', data: allMoKeys.map(k=>moData[k].due),
-            borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.1)',
-            fill: true, tension: 0.4, pointRadius: 4 },
-          { label: 'Completed', data: allMoKeys.map(k=>moData[k].comp),
-            borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.08)',
-            fill: true, tension: 0.4, pointRadius: 4 }
-        ] },
-      options: { responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { position: 'top' } },
-        scales: { x: { grid: { color: gridColor } }, y: { beginAtZero: true, grid: { color: gridColor } } } }
-    });
+    const sub = State.activeSubView;
 
-    const selMo = document.getElementById('r-mo-sel')?.value || '';
-    let due=0, comp=0, open=0;
-    State.tasks.forEach(t => {
-      if (!t.DueDate) return;
-      const d = new Date(t.DueDate);
-      const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-      if (k === selMo) {
-        due++;
-        if (t.Status === 'Completed') comp++;
-        else open++;
-      }
-    });
-    safeChart('monthBucketBar', {
-      type: 'bar',
-      data: { labels: ['Due', 'Completed', 'Open'],
-        datasets: [{ data: [due, comp, open],
-          backgroundColor: ['#6366f188','#10b98188','#ef444488'],
-          borderColor: ['#6366f1','#10b981','#ef4444'],
-          borderWidth: 2, borderRadius: 8 }] },
-      options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y',
-        plugins: { legend: { display: false } },
-        scales: { x: { beginAtZero: true, grid: { color: gridColor } }, y: { grid: { display: false } } } }
-    });
+    if (sub === 'employee') {
+      const selEmp = document.getElementById('r-emp-sel')?.value || '';
+      const empTasks = State.tasks.filter(t => t.AssignedTo === selEmp);
+      const stsOrder2 = Object.keys(STATUS_MAP);
+      const stsCounts = stsOrder2.map(s => empTasks.filter(t => t.Status === s).length);
+
+      safeChart('empStatusBar', {
+        type: 'bar',
+        data: {
+          labels: stsOrder2,
+          datasets: [{
+            label: 'Tasks', data: stsCounts,
+            backgroundColor: stsOrder2.map(s => STATUS_MAP[s].color + '99'),
+            borderColor: stsOrder2.map(s => STATUS_MAP[s].color),
+            borderWidth: 2, borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { color: gridColor }, ticks: { stepSize: 1 } } }
+        }
+      });
+    }
+
+    if (sub === 'monthly') {
+      const allMoKeys = [...new Set(State.tasks.filter(t => t.DueDate).map(t => {
+        const d = new Date(t.DueDate);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      }))].sort();
+      const moData = {};
+      allMoKeys.forEach(k => moData[k] = { due: 0, comp: 0, cf: 0 });
+      State.tasks.forEach(t => {
+        if (!t.DueDate) return;
+        const d = new Date(t.DueDate);
+        const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (moData[k]) {
+          moData[k].due++;
+          if (t.Status === 'Completed') moData[k].comp++;
+        }
+      });
+
+      safeChart('monthTrendLine', {
+        type: 'line',
+        data: {
+          labels: allMoKeys,
+          datasets: [
+            {
+              label: 'Tasks Due', data: allMoKeys.map(k => moData[k].due),
+              borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.1)',
+              fill: true, tension: 0.4, pointRadius: 4
+            },
+            {
+              label: 'Completed', data: allMoKeys.map(k => moData[k].comp),
+              borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.08)',
+              fill: true, tension: 0.4, pointRadius: 4
+            }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: { x: { grid: { color: gridColor } }, y: { beginAtZero: true, grid: { color: gridColor } } }
+        }
+      });
+
+      const selMo = document.getElementById('r-mo-sel')?.value || '';
+      let due = 0, comp = 0, open = 0;
+      State.tasks.forEach(t => {
+        if (!t.DueDate) return;
+        const d = new Date(t.DueDate);
+        const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (k === selMo) {
+          due++;
+          if (t.Status === 'Completed') comp++;
+          else open++;
+        }
+      });
+      safeChart('monthBucketBar', {
+        type: 'bar',
+        data: {
+          labels: ['Due', 'Completed', 'Open'],
+          datasets: [{
+            data: [due, comp, open],
+            backgroundColor: ['#6366f188', '#10b98188', '#ef444488'],
+            borderColor: ['#6366f1', '#10b981', '#ef4444'],
+            borderWidth: 2, borderRadius: 8
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+          plugins: { legend: { display: false } },
+          scales: { x: { beginAtZero: true, grid: { color: gridColor } }, y: { grid: { display: false } } }
+        }
+      });
+    }
+
+    if (sub === 'manager') {
+      // Manager subview removed
+    }
+
+    if (sub === 'visual') {
+      const stsOrder = Object.keys(STATUS_MAP);
+      const stsCounts = stsOrder.map(s => State.tasks.filter(t => t.Status === s).length);
+
+      safeChart('visStatusDoughnut', {
+        type: 'doughnut',
+        data: {
+          labels: stsOrder,
+          datasets: [{
+            data: stsCounts,
+            backgroundColor: stsOrder.map(s => STATUS_MAP[s].color + 'bb'),
+            borderColor: isDark ? '#0d1420' : '#f8fafc', borderWidth: 2, hoverOffset: 8
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: '60%',
+          plugins: { legend: { position: 'right', labels: { padding: 12, usePointStyle: true } } }
+        }
+      });
+
+      const prios = Object.keys(PRIORITY_MAP);
+      safeChart('visPriorityBar', {
+        type: 'bar',
+        data: {
+          labels: prios,
+          datasets: [{
+            label: 'Tasks',
+            data: prios.map(p => State.tasks.filter(t => t.Priority === p).length),
+            backgroundColor: prios.map(p => PRIORITY_MAP[p].color + '88'),
+            borderColor: prios.map(p => PRIORITY_MAP[p].color),
+            borderWidth: 2, borderRadius: 8
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { color: gridColor } } }
+        }
+      });
+
+      const empNames = State.employees.map(e => e.Name);
+      safeChart('visEmpBar', {
+        type: 'bar',
+        data: {
+          labels: empNames,
+          datasets: [
+            {
+              label: 'Tasks', data: empNames.map(n => State.tasks.filter(t => t.AssignedTo === n).length),
+              backgroundColor: 'rgba(99,102,241,0.55)', borderColor: '#6366f1', borderWidth: 2, borderRadius: 4
+            }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { color: gridColor } } }
+        }
+      });
+
+      // Category Pie removed
+    }
   }
 
-  if (sub === 'manager') {
-    const selMgr = document.getElementById('r-mgr-sel')?.value || '';
-    const team = State.employees.filter(e => e.Manager === selMgr).map(e => e.Name);
-    const mgrTasks = State.tasks.filter(t => team.includes(t.AssignedTo) || t.Manager === selMgr);
+  // ======================================================
+  //  TEAM MASTER VIEW
+  // ======================================================
+  function renderEmployees() {
+    const main = document.getElementById('content');
 
-    safeChart('mgrTeamBar', {
-      type: 'bar',
-      data: { labels: team,
-        datasets: [
-          { label: 'Est Hrs', data: team.map(n => mgrTasks.filter(t=>t.AssignedTo===n).reduce((s,t)=>s+roundNum(t.EstHours),0)),
-            backgroundColor: 'rgba(99,102,241,0.5)', borderColor: '#6366f1', borderWidth: 2, borderRadius: 4 },
-          { label: 'Actual Hrs', data: team.map(n => mgrTasks.filter(t=>t.AssignedTo===n).reduce((s,t)=>s+roundNum(t.ActualHours),0)),
-            backgroundColor: 'rgba(20,184,166,0.5)', borderColor: '#14b8a6', borderWidth: 2, borderRadius: 4 }
-        ] },
-      options: { responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { position: 'top' } },
-        scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { color: gridColor } } } }
-    });
 
-    const stsOrder = Object.keys(STATUS_MAP);
-    const stsCounts = stsOrder.map(s => mgrTasks.filter(t=>t.Status===s).length).filter((v,i,a) => v > 0 || a.some(x=>x>0));
-    const stsLabels = stsOrder.filter(s => mgrTasks.some(t=>t.Status===s));
-    safeChart('mgrStatusDoughnut', {
-      type: 'doughnut',
-      data: { labels: stsLabels,
-        datasets: [{ data: stsLabels.map(s=>mgrTasks.filter(t=>t.Status===s).length),
-          backgroundColor: stsLabels.map(s=>STATUS_MAP[s].color+'bb'),
-          borderColor: isDark ? '#0d1420' : '#f8fafc', borderWidth: 2 }] },
-      options: { responsive: true, maintainAspectRatio: false, cutout: '60%',
-        plugins: { legend: { position: 'bottom', labels: { padding: 10, usePointStyle: true } } } }
-    });
-  }
-
-  if (sub === 'visual') {
-    const stsOrder = Object.keys(STATUS_MAP);
-    const stsCounts = stsOrder.map(s => State.tasks.filter(t=>t.Status===s).length);
-
-    safeChart('visStatusDoughnut', {
-      type: 'doughnut',
-      data: { labels: stsOrder,
-        datasets: [{ data: stsCounts,
-          backgroundColor: stsOrder.map(s => STATUS_MAP[s].color + 'bb'),
-          borderColor: isDark ? '#0d1420' : '#f8fafc', borderWidth: 2, hoverOffset: 8 }] },
-      options: { responsive: true, maintainAspectRatio: false, cutout: '60%',
-        plugins: { legend: { position: 'right', labels: { padding: 12, usePointStyle: true } } } }
-    });
-
-    const prios = Object.keys(PRIORITY_MAP);
-    safeChart('visPriorityBar', {
-      type: 'bar',
-      data: { labels: prios,
-        datasets: [{ label: 'Tasks',
-          data: prios.map(p => State.tasks.filter(t=>t.Priority===p).length),
-          backgroundColor: prios.map(p => PRIORITY_MAP[p].color + '88'),
-          borderColor: prios.map(p => PRIORITY_MAP[p].color),
-          borderWidth: 2, borderRadius: 8 }] },
-      options: { responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { color: gridColor } } } }
-    });
-
-    const empNames = State.employees.map(e => e.Name);
-    safeChart('visEmpBar', {
-      type: 'bar',
-      data: { labels: empNames,
-        datasets: [
-          { label: 'Est Hours', data: empNames.map(n=>State.tasks.filter(t=>t.AssignedTo===n).reduce((s,t)=>s+roundNum(t.EstHours),0)),
-            backgroundColor: 'rgba(99,102,241,0.55)', borderColor: '#6366f1', borderWidth: 2, borderRadius: 4 },
-          { label: 'Actual Hours', data: empNames.map(n=>State.tasks.filter(t=>t.AssignedTo===n).reduce((s,t)=>s+roundNum(t.ActualHours),0)),
-            backgroundColor: 'rgba(20,184,166,0.55)', borderColor: '#14b8a6', borderWidth: 2, borderRadius: 4 }
-        ] },
-      options: { responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { position: 'top' } },
-        scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { color: gridColor } } } }
-    });
-
-    const cats = [...new Set(State.tasks.map(t=>t.Category).filter(Boolean))];
-    safeChart('visCategoryPie', {
-      type: 'pie',
-      data: { labels: cats,
-        datasets: [{ data: cats.map(c => State.tasks.filter(t=>t.Category===c).length),
-          backgroundColor: ['#6366f1bb','#14b8a6bb','#f59e0bbb','#ef4444bb','#8b5cf6bb','#3b82f6bb'],
-          borderColor: isDark ? '#0d1420' : '#f8fafc', borderWidth: 2 }] },
-      options: { responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { position: 'right', labels: { padding: 10, usePointStyle: true } } } }
-    });
-  }
-}
-
-// ======================================================
-//  TEAM MASTER VIEW
-// ======================================================
-function renderEmployees() {
-  const main = document.getElementById('content');
-
-  const cards = State.employees.map(e => {
-    const empTasks = State.tasks.filter(t => t.AssignedTo === e.Name);
-    const total = empTasks.length;
-    const comp  = empTasks.filter(t => t.Status === 'Completed').length;
-    const over  = empTasks.filter(t => t.OverdueFlag === 'Yes').length;
-    const actH  = empTasks.reduce((s,t) => s + roundNum(t.ActualHours), 0);
-    const rate  = total > 0 ? Math.round((comp/total)*100) : 0;
-
-    return `
-      <div class="emp-card">
-        <div class="emp-card-header">
-          <div class="emp-avatar" style="background:${getAvatarColor(e.Name)};">${getInitials(e.Name)}</div>
-          <div>
-            <div class="emp-name">${e.Name}</div>
-            <div class="emp-role">${e.Role} · ${e.Department}</div>
-          </div>
-        </div>
-        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
-          <span class="badge ${e.Status==='Active'?'status-completed':'status-cancelled'}">${e.Status||'—'}</span>
-          <span class="badge status-not-started">${e.Location||'—'}</span>
-        </div>
-        <div style="font-size:0.78rem; color:var(--text-secondary); margin-bottom:0.75rem;">
-          📧 ${e.Email||'—'} &nbsp; · &nbsp; 👔 Reports to: <strong>${e.Manager||'—'}</strong>
-        </div>
-        <div style="margin-bottom:0.75rem;">
-          <div class="kpi-label" style="margin-bottom:0.3rem;">Completion Rate (${comp}/${total})</div>
-          ${progressBar(rate)}
-        </div>
-        <div class="emp-stats">
-          <div>
-            <div class="emp-stat-label">Tasks</div>
-            <div class="emp-stat-value text-accent">${total}</div>
-          </div>
-          <div>
-            <div class="emp-stat-label">Overdue</div>
-            <div class="emp-stat-value" style="color:${over>0?'var(--danger)':'var(--text-muted)'};">${over}</div>
-          </div>
-          <div>
-            <div class="emp-stat-label">Act Hours</div>
-            <div class="emp-stat-value">${actH.toFixed(1)}</div>
-          </div>
-        </div>
-        <div style="margin-top:1rem; font-size:0.75rem; color:var(--text-muted);">
-          Capacity: ${e.WeeklyCapacity||40} hrs/wk · Joined: ${formatDate(e.JoinDate)}
-        </div>
-      </div>`;
-  }).join('');
-
-  main.innerHTML = `
+    main.innerHTML = `
     <div class="page-header">
       <div class="page-title-group">
-        <h1>Team Master</h1>
-        <p>${State.employees.length} team members · Employee Master data</p>
+        <h1>Accounts Team Master</h1>
+        <p>${State.employees.length} team members · Organizational roles</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary btn-sm" onclick="openEmpModal()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Member
+        </button>
       </div>
     </div>
 
-    ${State.employees.length ? `<div class="emp-cards">${cards}</div>` : '<div class="loading-overlay"><p>No employees found</p></div>'}
-
-    <div class="table-card" style="margin-top:1.5rem;">
-      <div class="table-header"><div class="table-title">Employee Master Table</div></div>
+    <div class="table-card" style="margin-top:0.5rem;">
+      <div class="table-header"><div class="table-title">Employee Registry</div></div>
       <div class="data-table-wrap">
         <table>
-          <thead><tr><th>Emp ID</th><th>Name</th><th>Department</th><th>Role</th><th>Manager</th><th>Email</th><th>Joined</th><th>Capacity</th><th>Status</th><th>Location</th></tr></thead>
+          <thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Joined</th><th>Status</th></tr></thead>
           <tbody>
             ${State.employees.map(e => `<tr>
               <td class="cell-mono text-xs text-muted">${e.EmpID}</td>
-              <td><div style="display:flex;align-items:center;gap:0.5rem;"><div style="width:26px;height:26px;border-radius:50%;background:${getAvatarColor(e.Name)};display:flex;align-items:center;justify-content:center;font-size:0.62rem;font-weight:800;color:white;">${getInitials(e.Name)}</div><span class="cell-primary">${e.Name}</span></div></td>
-              <td class="text-xs">${e.Department||'—'}</td>
-              <td class="text-xs">${e.Role||'—'}</td>
-              <td class="text-xs">${e.Manager||'—'}</td>
-              <td class="text-xs">${e.Email||'—'}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                  <div style="width:26px;height:26px;border-radius:50%;background:${getAvatarColor(e.Name)};display:flex;align-items:center;justify-content:center;font-size:0.62rem;font-weight:800;color:white;">${getInitials(e.Name)}</div>
+                  <span class="cell-primary">${e.Name}</span>
+                </div>
+              </td>
+              <td class="text-xs">${e.Role || '—'}</td>
               <td class="text-xs">${formatDate(e.JoinDate)}</td>
-              <td class="text-xs">${e.WeeklyCapacity||40} hrs</td>
-              <td><span class="badge ${e.Status==='Active'?'status-completed':'status-cancelled'}">${e.Status}</span></td>
-              <td class="text-xs">${e.Location||'—'}</td>
+              <td><span class="badge ${e.Status === 'Active' ? 'status-completed' : 'status-cancelled'}">${e.Status}</span></td>
             </tr>`).join('')}
           </tbody>
         </table>
       </div>
     </div>`;
-}
+  }
 
-// ======================================================
-//  MODAL LOGIC (Create + Edit)
-// ======================================================
-function openModal(taskId = null) {
-  const inner = document.getElementById('task-form-inner');
-  const overlay = document.getElementById('task-modal');
-  inner.setAttribute('data-task-id', taskId || '');
+  // ── EMPLOYEE MODAL LOGIC ──
+  function openEmpModal() {
+    const overlay = document.getElementById('employee-modal');
 
-  // Populate assignees + managers
-  const sel = document.getElementById('t-assignee');
-  const mgSel = document.getElementById('t-manager');
-  sel.innerHTML = '<option value="">-- Unassigned --</option>' + State.employees.map(e => `<option value="${e.Name}">${e.Name}</option>`).join('');
-  mgSel.innerHTML = '<option value="">-- No Manager --</option>' + State.employees.map(e => `<option value="${e.Name}">${e.Name}</option>`).join('');
-
-  if (taskId) {
-    const t = State.tasks.find(x => x.TaskID === taskId);
-    document.getElementById('modal-title').textContent = `Edit Task`;
-    document.getElementById('modal-subtitle').textContent = `${taskId} · Click Save to update Google Sheets`;
-    if (t) {
-      document.getElementById('t-title').value    = t.Title || '';
-      document.getElementById('t-desc').value     = t.Description || '';
-      document.getElementById('t-project').value  = t.Project || '';
-      document.getElementById('t-category').value = t.Category || 'Implementation';
-      document.getElementById('t-assignee').value = t.AssignedTo || '';
-      document.getElementById('t-priority').value = t.Priority || 'Medium';
-      document.getElementById('t-status').value   = t.Status || 'Not Started';
-      document.getElementById('t-due').value      = formatISO(t.DueDate);
-      document.getElementById('t-source').value   = t.Source || '';
-      document.getElementById('t-manager').value  = t.Manager || '';
-      document.getElementById('t-hours').value    = t.EstHours || '';
-      document.getElementById('t-actual').value   = t.ActualHours || '';
-      document.getElementById('t-progress').value = t.ProgressPercent || '';
-      document.getElementById('t-next').value     = t.NextStep || '';
-    }
-  } else {
-    document.getElementById('modal-title').textContent = 'New Task';
-    document.getElementById('modal-subtitle').textContent = 'Only Title and Description are required - fill other details later';
-    ['t-title','t-desc','t-project','t-source','t-hours','t-actual','t-progress','t-next','t-due'].forEach(id => {
+    // Clear fields
+    ['e-name', 'e-email', 'e-join-date'].forEach(id => {
       const el = document.getElementById(id); if (el) el.value = '';
     });
-    document.getElementById('t-priority').value = 'Medium';
-    document.getElementById('t-status').value   = 'Not Started';
-    document.getElementById('t-assignee').value = '';
-    document.getElementById('t-manager').value = '';
-    document.getElementById('t-category').value = 'Implementation';
+    document.getElementById('e-role').value = 'Employee';
+
+    overlay.classList.add('open');
   }
 
-  overlay.classList.add('open');
-}
+  function closeEmpModal() {
+    document.getElementById('employee-modal').classList.remove('open');
+  }
 
-function closeModal() {
-  document.getElementById('task-modal').classList.remove('open');
-}
+  function handleEmpModalOverlayClick(e) {
+    if (e.target === document.getElementById('employee-modal')) closeEmpModal();
+  }
 
-function handleModalOverlayClick(e) {
-  if (e.target === document.getElementById('task-modal')) closeModal();
-}
+  async function saveEmployee() {
+    const name = document.getElementById('e-name').value.trim();
+    const email = document.getElementById('e-email').value.trim();
 
-async function saveTask() {
-  const title = document.getElementById('t-title').value.trim();
-  const desc = document.getElementById('t-desc').value.trim();
-  
-  // Only Title and Description are required
-  if (!title) { alert('Task title is required'); return; }
-  if (!desc) { alert('Task description is required'); return; }
+    if (!name) { alert('Name is required'); return; }
+    if (!email) { alert('Email is required'); return; }
 
-  const taskId = document.getElementById('task-form-inner').getAttribute('data-task-id');
-  const estH   = parseFloat(document.getElementById('t-hours').value) || 0;
-  const actH   = parseFloat(document.getElementById('t-actual').value) || 0;
-  const newStatus = document.getElementById('t-status').value || 'Not Started';
+    const payload = {
+      Name: name,
+      Email: email,
+      Role: document.getElementById('e-role').value || 'Employee',
+      JoinDate: document.getElementById('e-join-date').value || new Date().toISOString().split('T')[0],
+      Status: 'Active',
+      // Maintain placeholders for DB schema compatibility
+      Department: 'Accounts',
+      Manager: '',
+      WeeklyCapacity: 40,
+      Location: '',
+      Notes: ''
+    };
 
-  const payload = {
-    Title:           title,
-    Description:     desc,
-    Project:         document.getElementById('t-project').value || '',
-    Category:        document.getElementById('t-category').value || 'Implementation',
-    AssignedTo:      document.getElementById('t-assignee').value || 'Unassigned',
-    Priority:        document.getElementById('t-priority').value || 'Medium',
-    Status:          newStatus,
-    ActionType:      STATUS_MAP[newStatus]?.action || 'Execute',
-    DueDate:         document.getElementById('t-due').value || '',
-    Source:          document.getElementById('t-source').value || '',
-    Manager:         document.getElementById('t-manager').value || '',
-    EstHours:        estH,
-    ActualHours:     actH,
-    HoursVariance:   estH > 0 || actH > 0 ? roundNum(estH - actH) : 0,
-    ProgressPercent: parseInt(document.getElementById('t-progress').value) || (newStatus === 'Completed' ? 100 : 0),
-    NextStep:        document.getElementById('t-next').value || ''
-  };
+    const saveBtn = document.querySelector('#employee-modal .btn-primary');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
 
-  if (newStatus === 'Completed' && !taskId) payload.CompletedDate = new Date().toISOString();
+    try {
+      const newId = await callServer('addEmployee', payload);
+      payload.EmpID = newId;
+      State.employees.push(payload);
 
-  const saveBtn = document.querySelector('.modal-footer .btn-primary');
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
-
-  try {
-    if (taskId) {
-      payload.TaskID = taskId;
-      await callServer('updateTaskDetails', payload);
-      const i = State.tasks.findIndex(x => x.TaskID === taskId);
-      if (i >= 0) State.tasks[i] = { ...State.tasks[i], ...payload };
-    } else {
-      const newId = await callServer('addTask', payload);
-      payload.TaskID = newId;
-      State.tasks.push(payload);
+      closeEmpModal();
+      // Refresh the view to show the new card/row
+      if (State.activeView === 'employees') renderEmployees();
+      // Also re-render task modal as the assignee list might have changed
+      // (though Task modal already re-populates on open)
+    } catch (err) {
+      alert('Save failed: ' + (err.message || err));
+    } finally {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Member'; }
     }
-    // Refresh stats
-    const [stats, chartData] = await Promise.all([
-      callServer('getDashboardStats'),
-      callServer('getChartData')
-    ]);
-    State.stats = stats || State.stats;
-    State.chartData = chartData || State.chartData;
-
-    closeModal();
-    setView(State.activeView);
-  } catch (err) {
-    alert('Save failed: ' + (err.message || err));
-  } finally {
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Task'; }
   }
-}
 
-// ======================================================
-//  THEME + SIDEBAR TOGGLE
-// ======================================================
-function toggleTheme() {
-  const root = document.documentElement;
-  const current = root.getAttribute('data-theme');
-  const next = current === 'dark' ? 'light' : 'dark';
-  root.setAttribute('data-theme', next);
-  localStorage.setItem('wf-theme', next);
-  updateThemeIcon(next);
-  // Re-draw charts with new colors if on visual sub-view
-  if (State.activeView === 'reports' || State.activeView === 'dashboard') {
-    destroyCharts();
-    setTimeout(() => {
-      if (State.activeView === 'dashboard') renderDashboard();
-      else drawReportCharts();
-    }, 100);
+  // ======================================================
+  //  MODAL LOGIC (Create + Edit)
+  // ======================================================
+  function openModal(taskId = null) {
+    const inner = document.getElementById('task-form-inner');
+    const overlay = document.getElementById('task-modal');
+    inner.setAttribute('data-task-id', taskId || '');
+
+    // Populate assignees
+    const sel = document.getElementById('t-assignee');
+    sel.innerHTML = '<option value="">-- Unassigned --</option>' + State.employees.map(e => `<option value="${e.Name}">${e.Name}</option>`).join('');
+
+    if (taskId) {
+      const t = State.tasks.find(x => x.TaskID === taskId);
+      document.getElementById('modal-title').textContent = `Edit Task`;
+      document.getElementById('modal-subtitle').textContent = `${taskId} · Click Save to update Google Sheets`;
+      if (t) {
+        document.getElementById('t-title').value = t.Title || '';
+        document.getElementById('t-desc').value = t.Description || '';
+        document.getElementById('t-assignee').value = t.AssignedTo || '';
+        document.getElementById('t-priority').value = t.Priority || 'Medium';
+        document.getElementById('t-status').value = t.Status || 'Not Started';
+        document.getElementById('t-due').value = formatISO(t.DueDate);
+      }
+    } else {
+      document.getElementById('modal-title').textContent = 'New Task';
+      document.getElementById('modal-subtitle').textContent = 'Fill in the basic details for the accounts task';
+      ['t-title', 't-desc', 't-due'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.value = '';
+      });
+      document.getElementById('t-priority').value = 'Medium';
+      document.getElementById('t-status').value = 'Not Started';
+      document.getElementById('t-assignee').value = '';
+    }
+
+    overlay.classList.add('open');
   }
-}
 
-function updateThemeIcon(theme) {
-  const icon = document.getElementById('theme-icon');
-  if (!icon) return;
-  if (theme === 'light') {
-    icon.innerHTML = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>';
-  } else {
-    icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+  function closeModal() {
+    document.getElementById('task-modal').classList.remove('open');
   }
-}
 
-function toggleSidebar() {
-  document.getElementById('sidebar').classList.toggle('open');
-}
+  function handleModalOverlayClick(e) {
+    if (e.target === document.getElementById('task-modal')) closeModal();
+  }
 
-// ======================================================
-//  KEYBOARD SHORTCUTS
-// ======================================================
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeModal();
-  if (e.ctrlKey && e.key === 'n') { e.preventDefault(); openModal(); }
-});
+  async function saveTask() {
+    const title = document.getElementById('t-title').value.trim();
+    const desc = document.getElementById('t-desc').value.trim();
 
-// ======================================================
-//  BOOT
-// ======================================================
-window.addEventListener('load', init);
+    // Only Title and Description are required
+    if (!title) { alert('Task title is required'); return; }
+    if (!desc) { alert('Task description is required'); return; }
 
-// Global error handler
-window.addEventListener('unhandledrejection', e => {
-  console.error('Unhandled Promise Rejection:', e.reason);
-});
+    const taskId = document.getElementById('task-form-inner').getAttribute('data-task-id');
+    const newStatus = document.getElementById('t-status').value || 'Not Started';
+
+    const payload = {
+      Title: title,
+      Description: desc,
+      AssignedTo: document.getElementById('t-assignee').value || 'Unassigned',
+      Priority: document.getElementById('t-priority').value || 'Medium',
+      Status: newStatus,
+      DueDate: document.getElementById('t-due').value || ''
+    };
+
+    if (newStatus === 'Completed' && !taskId) payload.CompletedDate = new Date().toISOString();
+
+    const saveBtn = document.querySelector('.modal-footer .btn-primary');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
+    try {
+      if (taskId) {
+        payload.TaskID = taskId;
+        await callServer('updateTaskDetails', payload);
+        const i = State.tasks.findIndex(x => x.TaskID === taskId);
+        if (i >= 0) State.tasks[i] = { ...State.tasks[i], ...payload };
+      } else {
+        const newId = await callServer('addTask', payload);
+        payload.TaskID = newId;
+        State.tasks.push(payload);
+      }
+      // Refresh stats
+      const [stats, chartData] = await Promise.all([
+        callServer('getDashboardStats'),
+        callServer('getChartData')
+      ]);
+      State.stats = stats || State.stats;
+      State.chartData = chartData || State.chartData;
+
+      closeModal();
+      setView(State.activeView);
+    } catch (err) {
+      alert('Save failed: ' + (err.message || err));
+    } finally {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Task'; }
+    }
+  }
+
+  // ======================================================
+  //  THEME + SIDEBAR TOGGLE
+  // ======================================================
+  function toggleTheme() {
+    const root = document.documentElement;
+    const current = root.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem('wf-theme', next);
+    updateThemeIcon(next);
+    // Re-draw charts with new colors if on visual sub-view
+    if (State.activeView === 'reports' || State.activeView === 'dashboard') {
+      destroyCharts();
+      setTimeout(() => {
+        if (State.activeView === 'dashboard') renderDashboard();
+        else drawReportCharts();
+      }, 100);
+    }
+  }
+
+  function updateThemeIcon(theme) {
+    const icon = document.getElementById('theme-icon');
+    if (!icon) return;
+    if (theme === 'light') {
+      icon.innerHTML = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>';
+    } else {
+      icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+    }
+  }
+
+  function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('open');
+  }
+
+  // ======================================================
+  //  KEYBOARD SHORTCUTS
+  // ======================================================
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeModal();
+    if (e.ctrlKey && e.key === 'n') { e.preventDefault(); openModal(); }
+  });
+
+  // ======================================================
+  // ======================================================
+  //  EMPLOYEE MANAGEMENT
+  // ======================================================
+  function openEmpModal(empId) {
+    const overlay = document.getElementById('employee-modal');
+    ['e-name', 'e-email', 'e-join-date'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    document.getElementById('e-role').value = 'Employee';
+    overlay.classList.add('open');
+  }
+
+  function closeEmpModal() {
+    document.getElementById('employee-modal').classList.remove('open');
+  }
+
+  function handleEmpModalOverlayClick(e) {
+    if (e.target === document.getElementById('employee-modal')) closeEmpModal();
+  }
+
+  async function saveEmployee() {
+    const name = document.getElementById('e-name').value.trim();
+    const email = document.getElementById('e-email').value.trim();
+    if (!name || !email) { alert('Name and Email are required'); return; }
+
+    const payload = {
+      Name: name,
+      Email: email,
+      Role: document.getElementById('e-role').value,
+      JoinDate: document.getElementById('e-join-date').value || new Date().toISOString().split('T')[0],
+      Status: 'Active'
+    };
+
+    try {
+      await callServer('addEmployee', payload);
+      State.employees.push(payload);
+      closeEmpModal();
+      if (State.activeView === 'employees') renderEmployees();
+    } catch (err) {
+      alert('Save failed: ' + (err.message || err));
+    }
+  }
+
+  // ======================================================
+  //  AUTHENTICATION LOGIC
+  // ======================================================
+  function toggleAuth(isSignup) {
+    console.log('Toggle Auth:', isSignup ? 'Signup' : 'Login');
+    const title = document.getElementById('auth-title');
+    const sub = document.getElementById('auth-subtitle');
+    const login = document.getElementById('login-form');
+    const sign = document.getElementById('signup-form');
+
+    if (title) title.textContent = isSignup ? 'Create Account' : 'Welcome Back';
+    if (sub) sub.textContent = isSignup ? 'Join the Workflow Pro team' : 'Please login to access Accounts Management';
+    
+    if (login) login.style.display = isSignup ? 'none' : 'block';
+    if (sign) sign.style.display = isSignup ? 'block' : 'none';
+  }
+
+  async function handleLogin() {
+    const user = document.getElementById('l-user').value.trim();
+    const pass = document.getElementById('l-pass').value;
+    if (!user || !pass) { alert('Please enter both username and password'); return; }
+
+    const btn = document.getElementById('login-btn');
+    btn.disabled = true; btn.textContent = 'Authenticating...';
+
+    try {
+      const userData = await callServer('login', user, pass);
+      State.user = userData;
+      localStorage.setItem('wf-session', JSON.stringify(userData));
+      await proceedToDashboard();
+    } catch (err) {
+      alert('Login Failed: ' + err.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Login';
+    }
+  }
+
+  async function handleSignup() {
+    const user = document.getElementById('s-user').value.trim();
+    const email = document.getElementById('s-email').value.trim();
+    const pass = document.getElementById('s-pass').value;
+
+    if (!user || !email || !pass) { alert('All fields are required'); return; }
+
+    const btn = document.getElementById('signup-btn');
+    btn.disabled = true; btn.textContent = 'Creating...';
+
+    try {
+      const userData = await callServer('signup', { username: user, password: pass, email: email, role: 'Employee' });
+      alert('Account created successfully! Please login.');
+      toggleAuth(false);
+    } catch (err) {
+      alert('Signup Failed: ' + err.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Create Account';
+    }
+  }
+
+  function handleLogout() {
+    localStorage.removeItem('wf-session');
+    State.user = null;
+    location.reload(); // Hard reset
+  }
+
+  async function proceedToDashboard() {
+    console.log('Proceeding to Dashboard...');
+    try {
+      // Hide auth, show app
+      document.getElementById('auth-screen').style.display = 'none';
+      document.getElementById('sidebar').style.display = 'flex';
+
+      // Set UI names
+      document.getElementById('user-display-name').textContent = State.user.username;
+      document.getElementById('user-display-role').textContent = State.user.role || 'Workflow Pro';
+      const avatar = document.getElementById('user-avatar');
+      if (avatar) {
+        avatar.textContent = getInitials(State.user.username);
+        avatar.style.background = getAvatarColor(State.user.username);
+      }
+
+      await refreshData();
+      setView('dashboard');
+    } catch (err) {
+      console.error('Proceed Error:', err);
+      // Fallback: still show the dashboard layout but alert the user
+      document.getElementById('auth-screen').style.display = 'none';
+      document.getElementById('sidebar').style.display = 'flex';
+      setView('dashboard');
+      alert('Welcome, and note: There was an issue loading your latest tasks. Please try refreshing the page.');
+    }
+  }
+
+  // ======================================================
+  //  BOOT
+  // ======================================================
+  window.addEventListener('load', init);
+
+  // Global error handler
+  window.addEventListener('unhandledrejection', e => {
+    console.error('Unhandled Promise Rejection:', e.reason);
+  });
 </script>
