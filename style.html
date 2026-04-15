@@ -1023,6 +1023,7 @@
 
   /* ── LOADING ── */
   .loader { width: 36px; height: 36px; border: 3px solid var(--border); border-bottom-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  .loader-sm { width: 14px; height: 14px; border: 2px solid var(--border); border-bottom-color: currentColor; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .loading-overlay {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -1164,4 +1165,30 @@
 
   /* Utilities */
   .w-full { width: 100%; }
+
+  /* ── PRINT STYLES ── */
+  @media print {
+    body { background: white !important; color: black !important; height: auto !important; overflow: visible !important; }
+    aside, .sidebar-toggle, .page-actions, .tab-nav, .theme-toggle, .auth-overlay, .modal-overlay { display: none !important; }
+    main { padding: 0 !important; margin: 0 !important; width: 100% !important; height: auto !important; overflow: visible !important; display: block !important; }
+    .page-header { margin-bottom: 1rem !important; }
+    .section-card, .kpi-card, .chart-card, .table-card { 
+      background: white !important; 
+      border: 1px solid #eee !important; 
+      box-shadow: none !important; 
+      margin-bottom: 1rem !important;
+      break-inside: avoid;
+    }
+    .kpi-value { color: black !important; }
+    .chart-canvas-wrap, .chart-canvas-wrap-tall, .chart-canvas-wrap-sm { height: auto !important; min-height: 250px; }
+    thead th { background: #f8fafc !important; color: black !important; border-bottom: 2px solid #ddd !important; }
+    tbody td { color: #333 !important; border-bottom: 1px solid #eee !important; }
+    .badge { border: 1px solid #ccc !important; color: black !important; background: white !important; }
+    
+    /* Force colors in PDF/Print */
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    
+    /* Ensure charts translate well */
+    canvas { max-width: 100% !important; height: auto !important; }
+  }
 </style>

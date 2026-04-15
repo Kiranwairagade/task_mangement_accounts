@@ -618,12 +618,144 @@
         <h1>Reports & Analytics</h1>
         <p>Deep-dive reports across employees, months, and managers</p>
       </div>
+      ${State.activeSubView === 'monthly' ? `
+      <div class="page-actions">
+        <button class="btn btn-secondary btn-sm" onclick="printReport()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Print Report
+        </button>
+        <button class="btn btn-primary btn-sm" onclick="downloadPDF(event)">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          Download PDF
+        </button>
+      </div>` : ''}
     </div>
     ${tabs}
     ${body}`;
 
     // Draw charts after DOM update
     setTimeout(() => drawReportCharts(), 60);
+  }
+
+  /* ── EXPORT LOGIC ── */
+  function generateFormalReportHTML() {
+    const selMo = document.getElementById('r-mo-sel')?.value || 'N/A';
+    const selEmp = document.getElementById('r-emp-mo-sel')?.value || 'All';
+    
+    const monthTasks = State.tasks.filter(t => {
+      if (!t.DueDate) return false;
+      const d = new Date(t.DueDate);
+      const isCorrectMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === selMo;
+      const matchesEmp = selEmp === 'All' || t.AssignedTo === selEmp;
+      return isCorrectMonth && matchesEmp;
+    }).sort((a, b) => (a.AssignedTo || '').localeCompare(b.AssignedTo || ''));
+
+    return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>Monthly Task Report - ${selMo}</title>
+      <style>
+        body { font-family: "Segoe UI", Arial, sans-serif; padding: 40px; color: #1a1a1a; line-height: 1.4; background: #fff; }
+        .header { margin-bottom: 30px; border-bottom: 2px solid #000; padding-bottom: 12px; }
+        .header h1 { margin: 0; font-size: 24px; color: #000; letter-spacing: -0.01em; }
+        .header p { margin: 6px 0 0; color: #444; font-size: 14px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 25px; table-layout: fixed; border: 1.5px solid #000; }
+        th, td { border: 1px solid #000; padding: 12px 10px; text-align: left; font-size: 11.5px; word-wrap: break-word; vertical-align: top; }
+        th { background-color: #f2f2f2; font-weight: bold; text-transform: uppercase; color: #000; font-size: 10.5px; letter-spacing: 0.03em; }
+        tr:nth-child(even) { background-color: #fdfdfd; }
+        .status-cell { font-weight: bold; text-transform: uppercase; font-size: 10px; color: #000; }
+        .emp-name { font-weight: 700; color: #000; }
+        .task-id { font-family: "Courier New", Courier, monospace; color: #555; }
+        @media print {
+          body { padding: 0; }
+          @page { margin: 1.5cm; size: portrait; }
+          .header { border-bottom: 1px solid #000; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>Monthly Employee Task Report</h1>
+        <p><strong>Period:</strong> ${selMo} | <strong>Generated on:</strong> ${new Date().toLocaleDateString('en-IN', {day:'2-digit', month:'long', year:'numeric'})}</p>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 18%;">Employee</th>
+            <th style="width: 12%;">Task ID</th>
+            <th style="width: 44%;">Task Description</th>
+            <th style="width: 15%;">Status</th>
+            <th style="width: 11%;">Due Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${monthTasks.map(t => `
+          <tr>
+            <td class="emp-name">${t.AssignedTo || 'Unassigned'}</td>
+            <td class="task-id">${t.TaskID}</td>
+            <td style="white-space: pre-wrap;">${t.Title}</td>
+            <td class="status-cell">${t.Status}</td>
+            <td>${formatDate(t.DueDate)}</td>
+          </tr>
+          `).join('')}
+          ${monthTasks.length === 0 ? '<tr><td colspan="5" style="text-align:center;padding:50px; color: #777;">No records found for the selected period.</td></tr>' : ''}
+        </tbody>
+      </table>
+      <div style="margin-top: 40px; font-size: 10px; color: #888; text-align: right; border-top: 1px solid #eee; padding-top: 12px; font-style: italic;">
+        Proprietary & Confidential - Workflow Pro Monitoring System
+      </div>
+    </body>
+    </html>`;
+  }
+
+  function printReport() {
+    const html = generateFormalReportHTML();
+    const win = window.open('', '_blank');
+    if (!win) {
+      alert('Pop-up blocked. Please allow pop-ups to print the formal report.');
+      return;
+    }
+    win.document.write(html);
+    win.document.close();
+    win.onload = function() {
+      win.print();
+    };
+  }
+
+  async function downloadPDF(e) {
+    const formalHTML = generateFormalReportHTML();
+    const selMo = document.getElementById('r-mo-sel')?.value || 'N/A';
+    const filename = `WorkflowPro_Monthly_Report_${selMo.replace(/-/g, '_')}.pdf`;
+
+    const opt = {
+      margin:       [0.4, 0.4],
+      filename:     filename,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true, letterRendering: true },
+      jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+    };
+
+    const btn = e ? e.currentTarget : null;
+    const oldText = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<div class="loader-sm" style="width:14px;height:14px;border-width:2px;display:inline-block;margin-right:5px;"></div> Exporting...';
+    }
+
+    try {
+      await html2pdf().set(opt).from(formalHTML).save();
+    } catch (err) {
+      console.error('PDF Generation Error:', err);
+      alert('Failed to generate formal PDF. Using the Print option as fallback.');
+      printReport();
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = oldText;
+      }
+    }
   }
 
   /* ── EMPLOYEE REPORT ── */
@@ -729,6 +861,7 @@
     )].sort().reverse();
 
     const selMo = document.getElementById('r-mo-sel')?.value || (allMonthKeys[0] || '');
+    const selEmp = document.getElementById('r-emp-mo-sel')?.value || 'All';
     const monthStart = selMo ? new Date(selMo + '-01') : new Date();
 
     let due = 0, comp = 0, cfOpen = 0, actH = 0;
@@ -758,13 +891,27 @@
       }
     });
 
+    const monthTasks = State.tasks.filter(t => {
+      if (!t.DueDate) return false;
+      const d = new Date(t.DueDate);
+      const isCorrectMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === selMo;
+      const matchesEmp = selEmp === 'All' || t.AssignedTo === selEmp;
+      return isCorrectMonth && matchesEmp;
+    }).sort((a, b) => (a.AssignedTo || '').localeCompare(b.AssignedTo || ''));
+
     return `
     <div class="section-card" style="margin-bottom:1.5rem;">
       <div class="section-card-header">
         <div style="font-weight:700;">📅 Monthly Report — ${selMo || '—'}</div>
-        <select id="r-mo-sel" class="input-glass" onchange="renderReports()">
-          ${allMonthKeys.map(k => `<option value="${k}" ${k === selMo ? 'selected' : ''}>${k}</option>`).join('')}
-        </select>
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <select id="r-mo-sel" class="input-glass" onchange="renderReports()">
+            ${allMonthKeys.map(k => `<option value="${k}" ${k === selMo ? 'selected' : ''}>${k}</option>`).join('')}
+          </select>
+          <select id="r-emp-mo-sel" class="input-glass" onchange="renderReports()">
+            <option value="All">-- All Employees --</option>
+            ${State.employees.map(e => `<option value="${e.Name}" ${e.Name === selEmp ? 'selected' : ''}>${e.Name}</option>`).join('')}
+          </select>
+        </div>
       </div>
     </div>
 
@@ -787,7 +934,7 @@
       </div>
     </div>
 
-    <div class="table-card">
+    <div class="table-card" style="margin-bottom:1.5rem;">
       <div class="table-header"><div class="table-title">Employee Summary — ${selMo}</div></div>
       <div class="data-table-wrap">
         <table>
@@ -796,15 +943,48 @@
             ${Object.keys(empStats).map(n => {
       const e = empStats[n];
       const pct = e.due > 0 ? Math.round((e.comp / e.due) * 100) : 0;
+      if (e.due === 0 && e.cf === 0) return '';
       return `<tr>
                 <td class="cell-primary text-xs">${n}</td>
-                <td class="text-xs">${e.role || '—'}</td>
+                <td class="text-xs">${e.dept || '—'}</td>
                 <td class="text-xs">${e.due}</td>
                 <td class="text-xs" style="color:var(--success);">${e.comp}</td>
                 <td class="text-xs">${e.open}</td>
                 <td style="min-width:130px;">${progressBar(pct, pct >= 80 ? '#10b981' : '#f59e0b')}</td>
               </tr>`;
     }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    
+    <!-- Detailed Task List -->
+    <div class="table-card">
+      <div class="table-header">
+        <div class="table-title">Employee-wise Task Details — ${selMo}</div>
+      </div>
+      <div class="data-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:20%;">Employee</th>
+              <th style="width:10%;">Task ID</th>
+              <th style="width:45%;">Task Description</th>
+              <th style="width:15%;">Status</th>
+              <th style="width:10%;">Due Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${monthTasks.map(t => `
+            <tr>
+              <td class="cell-primary text-xs">${t.AssignedTo || 'Unassigned'}</td>
+              <td class="cell-mono text-xs text-muted">${t.TaskID}</td>
+              <td class="text-xs" style="white-space:normal; line-height:1.4;">${t.Title}</td>
+              <td>${statusBadge(t.Status)}</td>
+              <td class="text-xs">${formatDate(t.DueDate)}</td>
+            </tr>
+            `).join('')}
+            ${monthTasks.length === 0 ? '<tr><td colspan="5" style="text-align:center;padding:2.5rem;color:var(--text-muted);opacity:0.6;">No task records found for this period.</td></tr>' : ''}
           </tbody>
         </table>
       </div>
