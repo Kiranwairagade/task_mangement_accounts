@@ -138,35 +138,43 @@ function getEmployeeLoad() {
 }
 
 /**
- * Updates a task status — also syncs ActionType, ProgressPercent, CompletedDate.
+ * Updates a task status — stamps InProgressDate or CompletedDate automatically.
  */
-function updateTaskStatus(taskId, newStatus) {
+function updateTaskStatus(taskId, newStatus, userEmail) {
   const record = {
-    TaskID:     taskId,
-    Status:     newStatus
+    TaskID: taskId,
+    Status: newStatus
   };
-  if (newStatus === 'Completed') {
-    record.CompletedDate    = new Date();
-    record.ProgressPercent  = 100;
-    record.OverdueFlag      = 'No';
+  const now = new Date();
+  if (newStatus === 'In Progress') {
+    record.InProgressDate = now;  // Start Date/Time stamp
   }
-  return updateRecord(DB_CONFIG.tasks, 'TaskID', record);
+  if (newStatus === 'Completed') {
+    record.CompletedDate   = now; // End Date/Time stamp
+    record.ProgressPercent = 100;
+    record.OverdueFlag     = 'No';
+  }
+  return updateRecord(DB_CONFIG.tasks, 'TaskID', record, userEmail);
 }
 
 /**
- * Updates full task details from modal — handles all 24 columns.
+ * Updates full task details from modal — stamps InProgressDate / CompletedDate.
  */
-function updateTaskDetails(taskData) {
-  if (taskData.Status === 'Completed' && !taskData.CompletedDate) {
-    taskData.CompletedDate = new Date();
+function updateTaskDetails(taskData, userEmail) {
+  const now = new Date();
+  if (taskData.Status === 'In Progress' && !taskData.InProgressDate) {
+    taskData.InProgressDate = now;  // Start Date/Time stamp
   }
-  return updateRecord(DB_CONFIG.tasks, 'TaskID', taskData);
+  if (taskData.Status === 'Completed' && !taskData.CompletedDate) {
+    taskData.CompletedDate = now;   // End Date/Time stamp
+  }
+  return updateRecord(DB_CONFIG.tasks, 'TaskID', taskData, userEmail);
 }
 
 /**
  * Adds a new task — auto-generates ID and derives computed fields.
  */
-function addNewTask(taskData) {
+function addNewTask(taskData, userEmail) {
   const tasks = getRecords(DB_CONFIG.tasks);
   const ids   = tasks.map(t => parseInt((t.TaskID || '').replace('TSK-', ''))).filter(n => !isNaN(n));
   const nextNum = ids.length > 0 ? Math.max(...ids) + 1 : 1;
@@ -186,14 +194,14 @@ function addNewTask(taskData) {
     CompletedDate:   taskData.Status === 'Completed' ? now : ''
   };
 
-  addRecord(DB_CONFIG.tasks, record);
+  addRecord(DB_CONFIG.tasks, record, userEmail);
   return newId;
 }
 
 /**
  * Adds a new employee — auto-generates ID (EMP-001 format).
  */
-function addNewEmployee(empData) {
+function addNewEmployee(empData, userEmail) {
   const employees = getRecords(DB_CONFIG.employees);
   const ids = employees.map(e => parseInt((e.EmpID || '').replace('EMP', '').replace('-', ''))).filter(n => !isNaN(n));
   const nextNum = ids.length > 0 ? Math.max(...ids) + 1 : 1;
@@ -210,20 +218,20 @@ function addNewEmployee(empData) {
     Status:         empData.Status || 'Active'
   };
 
-  addRecord(DB_CONFIG.employees, record);
+  addRecord(DB_CONFIG.employees, record, userEmail);
   return newId;
 }
 
 /**
  * Task Deletion
  */
-function deleteTask(taskId) {
-  return deleteRecord(DB_CONFIG.tasks, 'TaskID', taskId);
+function deleteTask(taskId, userEmail) {
+  return deleteRecord(DB_CONFIG.tasks, 'TaskID', taskId, userEmail);
 }
 
 /**
  * Employee Removal
  */
-function deleteMember(empId) {
-  return deleteRecord(DB_CONFIG.employees, 'EmpID', empId);
+function deleteMember(empId, userEmail) {
+  return deleteRecord(DB_CONFIG.employees, 'EmpID', empId, userEmail);
 }

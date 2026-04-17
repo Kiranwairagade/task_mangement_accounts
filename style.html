@@ -551,7 +551,8 @@
   .input-glass:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
   .input-glass::placeholder { color: var(--text-muted); }
 
-  select.input-glass option { background: #1e293b; color: var(--text-primary); }
+  select.input-glass option { background: var(--bg-surface); color: var(--text-primary); }
+  [data-theme="light"] select.input-glass option { background: #ffffff; color: #0f172a; }
 
   /* ── STATUS BADGES ── */
   .badge {

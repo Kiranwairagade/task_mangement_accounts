@@ -44,11 +44,11 @@ function getRecords(sheetName) {
 
 /**
  * Appends a record to a sheet with proper column alignment.
- * Handles missing/optional fields gracefully.
  * @param {string} sheetName
  * @param {Object} record
+ * @param {string} [userEmail]
  */
-function addRecord(sheetName, record) {
+function addRecord(sheetName, record, userEmail) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) throw new Error(`Sheet ${sheetName} not found`);
@@ -67,7 +67,7 @@ function addRecord(sheetName, record) {
   const validRow = row.slice(0, headers.filter(h => h).length);
   sheet.appendRow(validRow);
   
-  logActivity('Create', sheetName, `Added record: ${JSON.stringify(record)}`);
+  logActivity('Create', sheetName, `Added record: ${JSON.stringify(record)}`, userEmail);
 }
 
 /**
@@ -75,8 +75,9 @@ function addRecord(sheetName, record) {
  * @param {string} sheetName
  * @param {string} idKey The header key for ID (e.g., 'TaskID')
  * @param {Object} record Updated record data
+ * @param {string} [userEmail]
  */
-function updateRecord(sheetName, idKey, record) {
+function updateRecord(sheetName, idKey, record, userEmail) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(sheetName);
   const data = sheet.getDataRange().getValues();
@@ -94,7 +95,7 @@ function updateRecord(sheetName, idKey, record) {
         return (record.hasOwnProperty(header)) ? record[header] : data[i][colIndex];
       });
       sheet.getRange(rowNum, 1, 1, headers.length).setValues([rowValues]);
-      logActivity('Update', sheetName, `Updated ID: ${record[idKey]}`);
+      logActivity('Update', sheetName, `Updated ID: ${record[idKey]}`, userEmail);
       return true;
     }
   }
@@ -106,22 +107,23 @@ function updateRecord(sheetName, idKey, record) {
  * @param {string} sheetName
  * @param {string} idKey
  * @param {string} idValue
+ * @param {string} [userEmail]
  */
-function deleteRecord(sheetName, idKey, idValue) {
+function deleteRecord(sheetName, idKey, idValue, userEmail) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) return false;
-
+  
   const data = sheet.getDataRange().getValues();
   const headers = data[0].map(h => h ? String(h).trim() : '');
   const idIndex = headers.indexOf(idKey);
-
+  
   if (idIndex === -1) return false;
-
+  
   for (let i = 1; i < data.length; i++) {
     if (data[i][idIndex] === idValue) {
       sheet.deleteRow(i + 1);
-      logActivity('Delete', sheetName, `Deleted ID: ${idValue}`);
+      logActivity('Delete', sheetName, `Deleted ID: ${idValue}`, userEmail);
       return true;
     }
   }
@@ -141,10 +143,25 @@ function getSchema(sheetName) {
 
 /**
  * Logs activity to the audit sheet.
+ * @param {string} action  - e.g. 'Login', 'Create', 'Update', 'Delete'
+ * @param {string} target  - Sheet name or resource
+ * @param {string} details - Human-readable description
+ * @param {string} [userEmail] - Optional: the email of the web-app logged-in user
  */
-function logActivity(action, target, details) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(DB_CONFIG.audit);
-  const user = Session.getActiveUser().getEmail();
-  sheet.appendRow([new Date(), user, action, target, details]);
+function logActivity(action, target, details, userEmail) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(DB_CONFIG.audit);
+    if (!sheet) return; // Graceful no-op if audit sheet missing
+
+    // Prefer the passed-in web-app user email; fall back to the script runner's email
+    let email = userEmail || '';
+    if (!email) {
+      try { email = Session.getActiveUser().getEmail(); } catch (e) { email = 'unknown'; }
+    }
+
+    sheet.appendRow([new Date(), email, action, target, details]);
+  } catch (e) {
+    Logger.log('logActivity error: ' + e.message);
+  }
 }

@@ -15,9 +15,9 @@ function include(filename) {
 
 /**
  * Unified API gateway for all client-side calls.
- * Method routing via explicit switch to ensure V8 runtime compatibility.
+ * Now captures userEmail for strict audit logging.
  */
-function api(method, p1, p2) {
+function api(method, p1, p2, userEmail) {
   try {
     let result;
     switch (method) {
@@ -49,22 +49,22 @@ function api(method, p1, p2) {
 
       // ── Task Mutations ──
       case 'addTask':
-        result = addNewTask(p1);
+        result = addNewTask(p1, userEmail);
         break;
       case 'deleteTask':
-        result = deleteTask(p1);
+        result = deleteTask(p1, userEmail);
         break;
       case 'updateTaskStatus':
-        result = updateTaskStatus(p1, p2);
+        result = updateTaskStatus(p1, p2, userEmail);
         break;
       case 'updateTaskDetails':
-        result = updateTaskDetails(p1);
+        result = updateTaskDetails(p1, userEmail);
         break;
       case 'addEmployee':
-        result = addNewEmployee(p1);
+        result = addNewEmployee(p1, userEmail);
         break;
       case 'deleteMember':
-        result = deleteMember(p1);
+        result = deleteMember(p1, userEmail);
         break;
       
       // ── Auth ──

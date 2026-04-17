@@ -40,6 +40,9 @@ function loginUser(username, password) {
   const hash = hashPassword(password);
   if (user.PasswordHash !== hash) throw new Error('Invalid password');
   
+  // Log the login event with the user's actual email
+  logActivity('Login', 'DB_Users', `User "${username}" logged in`, user.Email || username);
+
   return {
     username: user.Username,
     role: user.Role,

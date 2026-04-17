@@ -48,6 +48,7 @@
 
   /* ── SERVER BRIDGE ── */
   function callServer(method, p1, p2) {
+    const userEmail = State.user ? State.user.email : '';
     return new Promise((resolve, reject) => {
       google.script.run
         .withSuccessHandler(res => {
@@ -55,7 +56,7 @@
           else reject(new Error(res ? res.error : 'Unknown error'));
         })
         .withFailureHandler(err => reject(err))
-        .api(method, p1, p2);
+        .api(method, p1, p2, userEmail);
     });
   }
 
@@ -572,7 +573,14 @@
     if (!t || t.Status === newStatus) return;
     t.Status = newStatus;
     t.ActionType = STATUS_MAP[newStatus]?.action || '';
-    if (newStatus === 'Completed') { t.ProgressPercent = 100; t.CompletedDate = new Date().toISOString(); }
+    // Stamp start/end timestamps on local state
+    if (newStatus === 'In Progress' && !t.InProgressDate) {
+      t.InProgressDate = new Date().toISOString();
+    }
+    if (newStatus === 'Completed') {
+      t.ProgressPercent = 100;
+      t.CompletedDate = new Date().toISOString();
+    }
     renderKanban();
     try { await callServer('updateTaskStatus', id, newStatus); }
     catch (err) { console.warn('Status sync failed:', err); }
@@ -641,14 +649,48 @@
   function generateFormalReportHTML() {
     const selMo = document.getElementById('r-mo-sel')?.value || 'N/A';
     const selEmp = document.getElementById('r-emp-mo-sel')?.value || 'All';
-    
+
+    // Filter tasks by the month they were CREATED (CreatedAt), not DueDate
     const monthTasks = State.tasks.filter(t => {
-      if (!t.DueDate) return false;
-      const d = new Date(t.DueDate);
+      // Fall back to DueDate if CreatedAt is missing (older records)
+      const dateRef = t.CreatedAt || t.DueDate;
+      if (!dateRef) return false;
+      const d = new Date(dateRef);
       const isCorrectMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === selMo;
       const matchesEmp = selEmp === 'All' || t.AssignedTo === selEmp;
       return isCorrectMonth && matchesEmp;
     }).sort((a, b) => (a.AssignedTo || '').localeCompare(b.AssignedTo || ''));
+
+    // Format date + time helper  e.g. "17 Apr 2026, 10:22 am"
+    const fmtDT = (raw) => {
+      if (!raw) return '—';
+      try {
+        const d = new Date(raw);
+        if (isNaN(d.getTime())) return '—';
+        const datePart = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        const timePart = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+        return `${datePart}, ${timePart}`;
+      } catch { return '—'; }
+    };
+
+    // Calculate duration between Start and End
+    const calcDuration = (start, end, created) => {
+      // Logic: Use start if available, else fall back to created
+      const effectiveStart = start || created;
+      if (!effectiveStart || !end) return '—';
+      try {
+        const s = new Date(effectiveStart);
+        const e = new Date(end);
+        if (isNaN(s.getTime()) || isNaN(e.getTime())) return '—';
+        const diffMs = e - s;
+        if (diffMs < 0) return '—';
+        const totalMins = Math.floor(diffMs / 60000);
+        const hrs = Math.floor(totalMins / 60);
+        const mins = totalMins % 60;
+        if (hrs === 0) return `${mins}m`;
+        return `${hrs}h ${mins}m`;
+      } catch { return '—'; }
+    };
 
     return `
     <!DOCTYPE html>
@@ -658,57 +700,65 @@
       <title>Monthly Task Report - ${selMo}</title>
       <style>
         body { font-family: "Segoe UI", Arial, sans-serif; padding: 40px; color: #1a1a1a; line-height: 1.4; background: #fff; }
-        .header { margin-bottom: 30px; border-bottom: 2px solid #000; padding-bottom: 12px; }
-        .header h1 { margin: 0; font-size: 24px; color: #000; letter-spacing: -0.01em; }
-        .header p { margin: 6px 0 0; color: #444; font-size: 14px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 25px; table-layout: fixed; border: 1.5px solid #000; }
-        th, td { border: 1px solid #000; padding: 12px 10px; text-align: left; font-size: 11.5px; word-wrap: break-word; vertical-align: top; }
-        th { background-color: #f2f2f2; font-weight: bold; text-transform: uppercase; color: #000; font-size: 10.5px; letter-spacing: 0.03em; }
-        tr:nth-child(even) { background-color: #fdfdfd; }
-        .status-cell { font-weight: bold; text-transform: uppercase; font-size: 10px; color: #000; }
-        .emp-name { font-weight: 700; color: #000; }
-        .task-id { font-family: "Courier New", Courier, monospace; color: #555; }
+        .header { margin-bottom: 24px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+        .header h1 { margin: 0; font-size: 22px; color: #000; letter-spacing: -0.01em; }
+        .header p { margin: 5px 0 0; color: #444; font-size: 12px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; border: 1.5px solid #000; }
+        th, td { border: 1px solid #000; padding: 7px 8px; text-align: left; font-size: 9.5px; word-wrap: break-word; vertical-align: top; }
+        th { background-color: #f2f2f2; font-weight: bold; text-transform: uppercase; color: #000; font-size: 8.5px; letter-spacing: 0.04em; text-align: center; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        .sr-no { text-align: center; font-weight: 700; }
+        .status-cell { font-weight: bold; text-transform: uppercase; font-size: 8px; }
         @media print {
           body { padding: 0; }
-          @page { margin: 1.5cm; size: portrait; }
-          .header { border-bottom: 1px solid #000; }
+          @page { margin: 1.2cm; size: landscape; }
         }
       </style>
     </head>
     <body>
       <div class="header">
         <h1>Monthly Employee Task Report</h1>
-        <p><strong>Period:</strong> ${selMo} | <strong>Generated on:</strong> ${new Date().toLocaleDateString('en-IN', {day:'2-digit', month:'long', year:'numeric'})}</p>
+        <p><strong>Period:</strong> ${selMo} &nbsp;|&nbsp; <strong>Employee:</strong> ${selEmp === 'All' ? 'All Employees' : selEmp} &nbsp;|&nbsp; <strong>Generated on:</strong> ${new Date().toLocaleDateString('en-IN', {day:'2-digit', month:'long', year:'numeric'})}</p>
       </div>
       <table>
         <thead>
           <tr>
-            <th style="width: 18%;">Employee</th>
-            <th style="width: 12%;">Task ID</th>
-            <th style="width: 44%;">Task Description</th>
-            <th style="width: 15%;">Status</th>
-            <th style="width: 11%;">Due Date</th>
+            <th style="width:3%">Sr. No.</th>
+            <th style="width:10%">Allotted By</th>
+            <th style="width:16%">Task</th>
+            <th style="width:18%">Action Taken</th>
+            <th style="width:11%">Created Date</th>
+            <th style="width:11%">Start Date/Time</th>
+            <th style="width:11%">End Date/Time</th>
+            <th style="width:10%">Duration</th>
+            <th style="width:10%">Status</th>
           </tr>
         </thead>
         <tbody>
-          ${monthTasks.map(t => `
+          ${monthTasks.map((t, idx) => `
           <tr>
-            <td class="emp-name">${t.AssignedTo || 'Unassigned'}</td>
-            <td class="task-id">${t.TaskID}</td>
-            <td style="white-space: pre-wrap;">${t.Title}</td>
-            <td class="status-cell">${t.Status}</td>
-            <td>${formatDate(t.DueDate)}</td>
-          </tr>
-          `).join('')}
-          ${monthTasks.length === 0 ? '<tr><td colspan="5" style="text-align:center;padding:50px; color: #777;">No records found for the selected period.</td></tr>' : ''}
+            <td class="sr-no">${idx + 1}</td>
+            <td>${t.AssignedTo || '—'}</td>
+            <td style="font-weight:600;white-space:pre-wrap">${t.Title || '—'}</td>
+            <td style="white-space:pre-wrap">${t.Description || '—'}</td>
+            <td>${fmtDT(t.CreatedAt)}</td>
+            <td>${fmtDT(t.InProgressDate || t.CreatedAt)}</td>
+            <td>${fmtDT(t.CompletedDate)}</td>
+            <td style="text-align:center;">${calcDuration(t.InProgressDate, t.CompletedDate, t.CreatedAt)}</td>
+            <td class="status-cell">${t.Status || '—'}</td>
+          </tr>`).join('')}
+          ${monthTasks.length === 0 ? '<tr><td colspan="9" style="text-align:center;padding:50px;color:#777">No records found for the selected period.</td></tr>' : ''}
         </tbody>
       </table>
-      <div style="margin-top: 40px; font-size: 10px; color: #888; text-align: right; border-top: 1px solid #eee; padding-top: 12px; font-style: italic;">
-        Proprietary & Confidential - Workflow Pro Monitoring System
+      <div style="margin-top:36px;font-size:10px;color:#888;text-align:right;border-top:1px solid #eee;padding-top:10px;font-style:italic">
+        Proprietary &amp; Confidential - Workflow Pro Monitoring System
       </div>
     </body>
     </html>`;
+
   }
+
+
 
   function printReport() {
     const html = generateFormalReportHTML();
@@ -1452,7 +1502,15 @@
       DueDate: document.getElementById('t-due').value || ''
     };
 
+    if (newStatus === 'In Progress') {
+      // Stamp InProgressDate only if not already set (first time going In Progress)
+      const existing = State.tasks.find(x => x.TaskID === taskId);
+      if (!existing || !existing.InProgressDate) {
+        payload.InProgressDate = new Date().toISOString();
+      }
+    }
     if (newStatus === 'Completed' && !taskId) payload.CompletedDate = new Date().toISOString();
+    if (newStatus === 'Completed' && taskId) payload.CompletedDate = new Date().toISOString();
 
     const saveBtn = document.querySelector('.modal-footer .btn-primary');
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
@@ -1619,7 +1677,28 @@
     btn.disabled = true; btn.textContent = 'Creating...';
 
     try {
+      // 1. Create the user account
       const userData = await callServer('signup', { username: user, password: pass, email: email, role: 'Employee' });
+
+      // 2. Also add the same person as an employee so they appear in task assignment
+      try {
+        const empPayload = {
+          Name: user,
+          Email: email,
+          Role: 'Employee',
+          JoinDate: new Date().toISOString().split('T')[0],
+          Status: 'Active',
+          Department: 'Accounts',
+          Manager: '',
+          WeeklyCapacity: 40,
+          Location: '',
+          Notes: ''
+        };
+        await callServer('addEmployee', empPayload);
+      } catch (empErr) {
+        console.warn('Employee record creation skipped:', empErr.message);
+      }
+
       alert('Account created successfully! Please login.');
       toggleAuth(false);
     } catch (err) {
@@ -1632,6 +1711,9 @@
   function handleLogout() {
     localStorage.removeItem('wf-session');
     State.user = null;
+    try {
+      showAuthScreen(); // Clear UI immediately
+    } catch (e) {}
     location.reload(); // Hard reset
   }
 
