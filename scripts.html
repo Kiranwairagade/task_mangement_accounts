@@ -582,7 +582,14 @@
       t.CompletedDate = new Date().toISOString();
     }
     renderKanban();
-    try { await callServer('updateTaskStatus', id, newStatus); }
+    try { 
+      await callServer('updateTaskStatus', id, newStatus);
+      const idx = State.tasks.findIndex(x => x.TaskID === id);
+      if (idx >= 0) {
+        if (newStatus === 'Completed') State.tasks[idx].CompletedDate = new Date().toISOString();
+        if (newStatus === 'In Progress' && !State.tasks[idx].InProgressDate) State.tasks[idx].InProgressDate = new Date().toISOString();
+      }
+    }
     catch (err) { console.warn('Status sync failed:', err); }
   }
   document.addEventListener('dragend', e => {
@@ -699,16 +706,16 @@
       <meta charset="UTF-8">
       <title>Monthly Task Report - ${selMo}</title>
       <style>
-        body { font-family: "Segoe UI", Arial, sans-serif; padding: 40px; color: #1a1a1a; line-height: 1.4; background: #fff; }
+        body { font-family: "Segoe UI", Arial, sans-serif; padding: 40px; color: #1a1a1a; line-height: 1.4; background: #fff; font-size: 9px; }
         .header { margin-bottom: 24px; border-bottom: 2px solid #000; padding-bottom: 10px; }
         .header h1 { margin: 0; font-size: 22px; color: #000; letter-spacing: -0.01em; }
         .header p { margin: 5px 0 0; color: #444; font-size: 12px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; border: 1.5px solid #000; }
-        th, td { border: 1px solid #000; padding: 7px 8px; text-align: left; font-size: 9.5px; word-wrap: break-word; vertical-align: top; }
-        th { background-color: #f2f2f2; font-weight: bold; text-transform: uppercase; color: #000; font-size: 8.5px; letter-spacing: 0.04em; text-align: center; }
+        th, td { border: 1px solid #000; padding: 7px 8px; text-align: left; font-size: 8.5px; word-break: break-word; overflow-wrap: break-word; vertical-align: top; }
+        th { background-color: #f2f2f2; font-weight: bold; text-transform: uppercase; color: #000; font-size: 7.5px; letter-spacing: 0.04em; text-align: center; }
         tr:nth-child(even) { background-color: #f9f9f9; }
         .sr-no { text-align: center; font-weight: 700; }
-        .status-cell { font-weight: bold; text-transform: uppercase; font-size: 8px; }
+        .status-cell { font-weight: bold; text-transform: uppercase; font-size: 7.5px; }
         @media print {
           body { padding: 0; }
           @page { margin: 1.2cm; size: landscape; }
@@ -723,14 +730,14 @@
       <table>
         <thead>
           <tr>
-            <th style="width:3%">Sr. No.</th>
-            <th style="width:10%">Allotted By</th>
-            <th style="width:16%">Task</th>
-            <th style="width:18%">Action Taken</th>
-            <th style="width:11%">Created Date</th>
+            <th style="width:4%">Sr. No.</th>
+            <th style="width:11%">Allotted By</th>
+            <th style="width:14%">Task</th>
+            <th style="width:20%">Action Taken</th>
+            <th style="width:10%">Created Date</th>
             <th style="width:11%">Start Date/Time</th>
             <th style="width:11%">End Date/Time</th>
-            <th style="width:10%">Duration</th>
+            <th style="width:9%">Duration</th>
             <th style="width:10%">Status</th>
           </tr>
         </thead>
@@ -783,8 +790,8 @@
       margin:       [0.4, 0.4],
       filename:     filename,
       image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true, letterRendering: true },
-      jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+      html2canvas:  { scale: 1.5, useCORS: true, letterRendering: true, windowWidth: 1400 },
+      jsPDF:        { unit: 'in', format: 'letter', orientation: 'landscape' }
     };
 
     const btn = e ? e.currentTarget : null;
@@ -1544,7 +1551,11 @@
         payload.TaskID = taskId;
         await callServer('updateTaskDetails', payload);
         const i = State.tasks.findIndex(x => x.TaskID === taskId);
-        if (i >= 0) State.tasks[i] = { ...State.tasks[i], ...payload };
+        if (i >= 0) {
+          State.tasks[i] = { ...State.tasks[i], ...payload };
+          if (payload.CompletedDate) State.tasks[i].CompletedDate = payload.CompletedDate;
+          if (payload.InProgressDate) State.tasks[i].InProgressDate = payload.InProgressDate;
+        }
       } else {
         const newId = await callServer('addTask', payload);
         payload.TaskID = newId;
