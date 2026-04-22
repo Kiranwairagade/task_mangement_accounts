@@ -66,6 +66,9 @@ function api(method, p1, p2, userEmail) {
       case 'deleteMember':
         result = deleteMember(p1, userEmail);
         break;
+      case 'updateEmployee':
+        result = updateRecord('DB_Employees', 'EmpID', p1, userEmail);
+        break;
       
       // ── Auth ──
       case 'login':

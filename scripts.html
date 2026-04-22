@@ -1354,7 +1354,7 @@
       <div class="table-header"><div class="table-title">Employee Registry</div></div>
       <div class="data-table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Joined</th><th>Status</th></tr></thead>
+          <thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Joined</th><th>Status</th><th style="width:80px;">Actions</th></tr></thead>
           <tbody>
             ${State.employees.map(e => `<tr>
               <td class="cell-mono text-xs text-muted">${e.EmpID}</td>
@@ -1367,6 +1367,7 @@
               <td class="text-xs">${e.Role || '—'}</td>
               <td class="text-xs">${formatDate(e.JoinDate)}</td>
               <td><span class="badge ${e.Status === 'Active' ? 'status-completed' : 'status-cancelled'}">${e.Status}</span></td>
+              <td><button class="btn btn-secondary btn-sm" onclick="openEmpModal('${e.EmpID}')">✏️ Edit</button></td>
             </tr>`).join('')}
           </tbody>
         </table>
@@ -1375,14 +1376,32 @@
   }
 
   // ── EMPLOYEE MODAL LOGIC ──
-  function openEmpModal() {
+  function openEmpModal(empId = null) {
     const overlay = document.getElementById('employee-modal');
+    const inner = document.getElementById('employee-form-inner');
+    inner.setAttribute('data-emp-id', empId || '');
 
-    // Clear fields
-    ['e-name', 'e-email', 'e-join-date'].forEach(id => {
-      const el = document.getElementById(id); if (el) el.value = '';
-    });
-    document.getElementById('e-role').value = 'Employee';
+    const modalTitle = document.querySelector('#employee-modal .modal-title');
+    const modalSubtitle = document.querySelector('#employee-modal .modal-subtitle');
+
+    if (empId) {
+      modalTitle.textContent = 'Edit Team Member';
+      modalSubtitle.textContent = `Editing employee ${empId}`;
+      const emp = State.employees.find(e => e.EmpID === empId);
+      if (emp) {
+        document.getElementById('e-name').value = emp.Name || '';
+        document.getElementById('e-email').value = emp.Email || '';
+        document.getElementById('e-role').value = emp.Role || 'Employee';
+        document.getElementById('e-join-date').value = formatISO(emp.JoinDate);
+      }
+    } else {
+      modalTitle.textContent = 'New Team Member';
+      modalSubtitle.textContent = 'Add a member to the Accounts registry';
+      ['e-name', 'e-email', 'e-join-date'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.value = '';
+      });
+      document.getElementById('e-role').value = 'Employee';
+    }
 
     overlay.classList.add('open');
   }
@@ -1402,13 +1421,14 @@
     if (!name) { alert('Name is required'); return; }
     if (!email) { alert('Email is required'); return; }
 
+    const empId = document.getElementById('employee-form-inner').getAttribute('data-emp-id');
+
     const payload = {
       Name: name,
       Email: email,
       Role: document.getElementById('e-role').value || 'Employee',
       JoinDate: document.getElementById('e-join-date').value || new Date().toISOString().split('T')[0],
       Status: 'Active',
-      // Maintain placeholders for DB schema compatibility
       Department: 'Accounts',
       Manager: '',
       WeeklyCapacity: 40,
@@ -1420,15 +1440,19 @@
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
 
     try {
-      const newId = await callServer('addEmployee', payload);
-      payload.EmpID = newId;
-      State.employees.push(payload);
+      if (empId) {
+        payload.EmpID = empId;
+        await callServer('updateEmployee', payload);
+        const i = State.employees.findIndex(e => e.EmpID === empId);
+        if (i >= 0) State.employees[i] = { ...State.employees[i], ...payload };
+      } else {
+        const newId = await callServer('addEmployee', payload);
+        payload.EmpID = newId;
+        State.employees.push(payload);
+      }
 
       closeEmpModal();
-      // Refresh the view to show the new card/row
       if (State.activeView === 'employees') renderEmployees();
-      // Also re-render task modal as the assignee list might have changed
-      // (though Task modal already re-populates on open)
     } catch (err) {
       alert('Save failed: ' + (err.message || err));
     } finally {
@@ -1589,45 +1613,7 @@
   // ======================================================
   //  EMPLOYEE MANAGEMENT
   // ======================================================
-  function openEmpModal(empId) {
-    const overlay = document.getElementById('employee-modal');
-    ['e-name', 'e-email', 'e-join-date'].forEach(id => {
-      const el = document.getElementById(id); if (el) el.value = '';
-    });
-    document.getElementById('e-role').value = 'Employee';
-    overlay.classList.add('open');
-  }
 
-  function closeEmpModal() {
-    document.getElementById('employee-modal').classList.remove('open');
-  }
-
-  function handleEmpModalOverlayClick(e) {
-    if (e.target === document.getElementById('employee-modal')) closeEmpModal();
-  }
-
-  async function saveEmployee() {
-    const name = document.getElementById('e-name').value.trim();
-    const email = document.getElementById('e-email').value.trim();
-    if (!name || !email) { alert('Name and Email are required'); return; }
-
-    const payload = {
-      Name: name,
-      Email: email,
-      Role: document.getElementById('e-role').value,
-      JoinDate: document.getElementById('e-join-date').value || new Date().toISOString().split('T')[0],
-      Status: 'Active'
-    };
-
-    try {
-      await callServer('addEmployee', payload);
-      State.employees.push(payload);
-      closeEmpModal();
-      if (State.activeView === 'employees') renderEmployees();
-    } catch (err) {
-      alert('Save failed: ' + (err.message || err));
-    }
-  }
 
   // ======================================================
   //  AUTHENTICATION LOGIC
