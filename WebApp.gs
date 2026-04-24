@@ -67,7 +67,10 @@ function api(method, p1, p2, userEmail) {
         result = deleteMember(p1, userEmail);
         break;
       case 'updateEmployee':
-        result = updateRecord('DB_Employees', 'EmpID', p1, userEmail);
+        result = updateEmployee(p1, userEmail);
+        break;
+      case 'checkRole':
+        result = checkUserRole(p1);
         break;
       
       // ── Auth ──

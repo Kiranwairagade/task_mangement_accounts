@@ -141,16 +141,20 @@ function getEmployeeLoad() {
  * Updates a task status — stamps InProgressDate or CompletedDate automatically.
  */
 function updateTaskStatus(taskId, newStatus, userEmail) {
+  const tasks = getRecords(DB_CONFIG.tasks);
+  const t = tasks.find(x => x.TaskID === taskId);
+  
   const record = {
     TaskID: taskId,
     Status: newStatus
   };
   const now = new Date();
-  if (newStatus === 'In Progress') {
-    record.InProgressDate = now;  // Start Date/Time stamp
+  
+  if (newStatus === 'In Progress' && (!t || !t.InProgressDate)) {
+    record.InProgressDate = now;
   }
   if (newStatus === 'Completed') {
-    record.CompletedDate   = now; // End Date/Time stamp
+    if (!t || !t.CompletedDate) record.CompletedDate = now;
     record.ProgressPercent = 100;
     record.OverdueFlag     = 'No';
   }
@@ -191,6 +195,7 @@ function addNewTask(taskData, userEmail) {
     Status:          taskData.Status || 'Not Started',
     DueDate:         taskData.DueDate || '',
     CreatedAt:       now,
+    InProgressDate:  taskData.Status === 'In Progress' ? now : '',
     CompletedDate:   taskData.Status === 'Completed' ? now : ''
   };
 
@@ -219,7 +224,53 @@ function addNewEmployee(empData, userEmail) {
   };
 
   addRecord(DB_CONFIG.employees, record, userEmail);
+
+  // PART 3 — Create DB_Users record
+  if (empData.Password) {
+    const userRecord = {
+      Username: empData.Email,
+      PasswordHash: hashPassword(empData.Password),
+      Email: empData.Email,
+      Role: empData.Role || 'Employee',
+      CreatedAt: new Date().toISOString(),
+      LinkedEmpID: newId
+    };
+    addRecord('DB_Users', userRecord, userEmail);
+  }
+
   return newId;
+}
+
+/**
+ * Updates employee and their linked user account.
+ */
+function updateEmployee(empData, userEmail) {
+  // 1. Update DB_Employees record
+  updateRecord(DB_CONFIG.employees, 'EmpID', empData, userEmail);
+  
+  // 2. If new password or role provided, update DB_Users
+  if ((empData.NewPassword && empData.NewPassword.trim() !== '') || empData.Role) {
+    const users = getRecords('DB_Users');
+    const user = users.find(u => u.Email === empData.Email);
+    if (user) {
+      const userUpdate = { Email: empData.Email };
+      if (empData.NewPassword) userUpdate.PasswordHash = hashPassword(empData.NewPassword);
+      if (empData.Role) userUpdate.Role = empData.Role;
+      
+      updateRecord('DB_Users', 'Email', userUpdate, userEmail);
+    }
+  }
+  return true;
+}
+
+/**
+ * Checks a user's role by email.
+ */
+function checkUserRole(email) {
+  const users = getRecords('DB_Users');
+  const user = users.find(u => u.Email === email);
+  if (!user) throw new Error('User not found');
+  return user.Role;
 }
 
 /**

@@ -17,40 +17,21 @@
     <!-- Auth Screen -->
     <div id="auth-screen" class="auth-overlay">
       <div class="auth-card" id="auth-card">
-        <div class="auth-header">
-          <div class="auth-logo">🪐</div>
-          <h1 id="auth-title">Welcome Back</h1>
-          <p id="auth-subtitle">Please login to access Accounts Management</p>
-        </div>
-        
         <div id="login-form">
-          <div class="form-group" style="margin-bottom:1.25rem;">
-            <label class="form-label">Username</label>
-            <input type="text" id="l-user" class="input-glass" placeholder="Enter your username">
+          <h2 style="font-size: 1.75rem; font-weight: 800; margin-bottom: 0.5rem;">Welcome Back</h2>
+          <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 2rem;">Login with your company email to access Workflow Pro</p>
+          
+          <div class="form-group" style="margin-bottom: 1.25rem;">
+            <label class="form-label">Email</label>
+            <input type="email" id="l-user" class="input-glass" placeholder="Enter your email">
           </div>
-          <div class="form-group" style="margin-bottom:1.5rem;">
-            <label class="form-label">Password</label>
+          <div class="form-group" style="margin-bottom: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+              <label class="form-label" style="margin-bottom: 0;">Password</label>
+            </div>
             <input type="password" id="l-pass" class="input-glass" placeholder="••••••••">
           </div>
-          <button type="button" class="btn btn-primary w-full" id="login-btn" onclick="handleLogin()">Login</button>
-          <p class="auth-switch">Don't have an account? <a href="javascript:void(0)" onclick="toggleAuth(true)">Sign Up</a></p>
-        </div>
-
-        <div id="signup-form" style="display:none;">
-          <div class="form-group" style="margin-bottom:1rem;">
-            <label class="form-label">Username</label>
-            <input type="text" id="s-user" class="input-glass" placeholder="Pick a unique username">
-          </div>
-          <div class="form-group" style="margin-bottom:1rem;">
-            <label class="form-label">Email</label>
-            <input type="email" id="s-email" class="input-glass" placeholder="name@company.com">
-          </div>
-          <div class="form-group" style="margin-bottom:1.25rem;">
-            <label class="form-label">Password</label>
-            <input type="password" id="s-pass" class="input-glass" placeholder="••••••••">
-          </div>
-          <button type="button" class="btn btn-primary w-full" id="signup-btn" onclick="handleSignup()">Create Account</button>
-          <p class="auth-switch">Already have an account? <a href="javascript:void(0)" onclick="toggleAuth(false)">Login</a></p>
+          <button class="btn btn-primary" style="width: 100%; justify-content: center; height: 42px;" onclick="handleLogin()">Login to Dashboard</button>
         </div>
       </div>
     </div>
@@ -167,7 +148,7 @@
             </div>
             <div class="form-group">
               <label class="form-label">Status</label>
-              <select id="t-status" class="input-glass">
+              <select id="t-status" class="input-glass" onchange="showHideTimestampFields()">
                 <option value="Not Started">Not Started</option>
                 <option value="In Progress">In Progress</option>
                 <option value="Review">Review</option>
@@ -176,6 +157,20 @@
                 <option value="Completed">Completed</option>
                 <option value="Cancelled">Cancelled</option>
               </select>
+            </div>
+          </div>
+
+          <!-- PART 3 — NEW READONLY TIMESTAMP FIELDS -->
+          <div id="timestamp-fields-group" class="form-grid-2" style="margin-top: 1.25rem; display: none;">
+            <div class="form-group" id="t-inprogress-wrap" style="display: none;">
+              <label class="form-label">Started At</label>
+              <input type="text" id="t-inprogress-date" class="input-glass" readonly 
+                     style="opacity:0.7; cursor:not-allowed; background: rgba(255,255,255,0.03);">
+            </div>
+            <div class="form-group" id="t-completed-wrap" style="display: none;">
+              <label class="form-label">Completed At</label>
+              <input type="text" id="t-completed-date" class="input-glass" readonly 
+                     style="opacity:0.7; cursor:not-allowed; background: rgba(255,255,255,0.03);">
             </div>
           </div>
         </div>
@@ -210,12 +205,20 @@
             <label class="form-label">Email Address *</label>
             <input type="email" id="e-email" class="input-glass" placeholder="e.g. pammi@company.com">
           </div>
+          <div class="form-group" style="margin-bottom:1.25rem;">
+            <label class="form-label">Password *</label>
+            <input type="password" id="e-password" class="input-glass" placeholder="Set login password">
+          </div>
+          <div class="form-group" style="margin-bottom:1.25rem;">
+            <label class="form-label">New Password <span style="font-weight:400;opacity:0.6;">(leave blank to keep existing)</span></label>
+            <input type="password" id="e-new-password" class="input-glass" placeholder="Type to change password">
+          </div>
           <div class="form-grid-2">
             <div class="form-group">
               <label class="form-label">Designation / Role</label>
               <select id="e-role" class="input-glass">
-                <option value="Director">Director</option>
                 <option value="Employee" selected>Employee</option>
+                <option value="Admin">Admin</option>
               </select>
             </div>
             <div class="form-group">

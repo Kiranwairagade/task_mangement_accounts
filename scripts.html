@@ -43,7 +43,9 @@
     activeView: 'dashboard',
     activeSubView: 'employee',
     chartInstances: [],
-    isLoading: false
+    isLoading: false,
+    kanbanFilter: { text: '', priority: 'All', assignee: [], status: 'All' },
+    isKanbanFilterOpen: false
   };
 
   /* ── SERVER BRIDGE ── */
@@ -77,6 +79,57 @@
       if (isNaN(d.getTime())) return '';
       return d.toISOString().split('T')[0];
     } catch { return ''; }
+  }
+
+  function formatOverdueDate(raw) {
+    if (!raw) return '';
+    try {
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+    } catch { return ''; }
+  }
+
+  function formatFullDateTime(raw) {
+    if (!raw) return '—';
+    try {
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return '—';
+      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+           + ' ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    } catch { return '—'; }
+  }
+
+  function showHideTimestampFields() {
+    const statusSelect = document.getElementById('t-status');
+    const status = statusSelect ? statusSelect.value : '';
+    const group = document.getElementById('timestamp-fields-group');
+    const startWrap = document.getElementById('t-inprogress-wrap');
+    const endWrap = document.getElementById('t-completed-wrap');
+    const startDate = document.getElementById('t-inprogress-date')?.value;
+    const endDate = document.getElementById('t-completed-date')?.value;
+
+    if (!group || !startWrap || !endWrap) return;
+
+    let showGroup = false;
+
+    // Show start date if status is In Progress/Completed AND we have a value
+    if ((status === 'In Progress' || status === 'Completed') && startDate && startDate !== '—') {
+      startWrap.style.display = 'block';
+      showGroup = true;
+    } else {
+      startWrap.style.display = 'none';
+    }
+
+    // Show end date if status is Completed AND we have a value
+    if (status === 'Completed' && endDate && endDate !== '—') {
+      endWrap.style.display = 'block';
+      showGroup = true;
+    } else {
+      endWrap.style.display = 'none';
+    }
+
+    group.style.display = showGroup ? 'grid' : 'none';
   }
 
   function getInitials(name) {
@@ -185,6 +238,12 @@
     if (view === 'kanban') renderKanban();
     if (view === 'reports') renderReports();
     if (view === 'employees') renderEmployees();
+
+    // Reset Kanban filters on view change
+    if (view !== 'kanban') {
+      State.isKanbanFilterOpen = false;
+      State.kanbanFilter = { text: '', priority: 'All', assignee: [], status: 'All' };
+    }
   }
 
   /* ── DESTROY ALL CHARTS ── */
@@ -271,16 +330,6 @@
       <div class="page-title-group">
         <h1>Dashboard</h1>
         <p>Project delivery overview — all teams, all time</p>
-      </div>
-      <div class="page-actions">
-        <button class="btn btn-secondary btn-sm" onclick="refreshData().then(renderDashboard)">
-          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          Refresh
-        </button>
-        <button class="btn btn-primary btn-sm" onclick="openModal()">
-          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          New Task
-        </button>
       </div>
     </div>
 
@@ -431,83 +480,138 @@
   // ======================================================
   //  KANBAN BOARD VIEW
   // ======================================================
+  /* ── KANBAN HELPERS ── */
+  function toggleFilterPanel() {
+    State.isKanbanFilterOpen = !State.isKanbanFilterOpen;
+    document.getElementById('filter-panel').classList.toggle('open', State.isKanbanFilterOpen);
+  }
+
+  function setKanbanFilter(key, val) {
+    State.kanbanFilter[key] = val;
+    renderKanban();
+  }
+
+  function toggleAssigneeFilter(name) {
+    const filter = State.kanbanFilter.assignee;
+    const idx = filter.indexOf(name);
+    if (idx === -1) filter.push(name);
+    else filter.splice(idx, 1);
+    renderKanban();
+  }
+
+  function clearAssigneeFilter(name) {
+    State.kanbanFilter.assignee = State.kanbanFilter.assignee.filter(n => n !== name);
+    renderKanban();
+  }
+
+  function clearKanbanFilters() {
+    State.kanbanFilter = { text: '', priority: 'All', assignee: [], status: 'All' };
+    const searchInput = document.getElementById('k-search');
+    if (searchInput) searchInput.value = '';
+    renderKanban();
+  }
+
   function renderKanban() {
     const main = document.getElementById('content');
-    const filterText = (document.getElementById('k-search')?.value || '').toLowerCase();
-    const filterPrio = document.getElementById('k-prio-filter')?.value || 'All';
+    const f = State.kanbanFilter;
+    
+    // Sync search input value if already rendered
+    const currentSearch = document.getElementById('k-search')?.value || '';
+    if (currentSearch !== f.text && document.getElementById('k-search')) {
+       // Only sync if input exists and text differs
+    }
+
+    const filteredTasks = State.tasks.filter(t => {
+      const matchText = !f.text || 
+        (t.Title || '').toLowerCase().includes(f.text.toLowerCase()) || 
+        (t.TaskID || '').toLowerCase().includes(f.text.toLowerCase());
+      const matchPrio = f.priority === 'All' || t.Priority === f.priority;
+      const matchEmp  = f.assignee.length === 0 || f.assignee.includes(t.AssignedTo || 'Unassigned');
+      const matchSts  = f.status   === 'All' || t.Status === f.status;
+      return matchText && matchPrio && matchEmp && matchSts;
+    });
 
     const grouped = {};
     KANBAN_COLS.forEach(c => grouped[c] = []);
-    State.tasks.forEach(t => {
-      const matchText = !filterText ||
-        (t.Title || '').toLowerCase().includes(filterText) ||
-        (t.AssignedTo || '').toLowerCase().includes(filterText) ||
-        (t.TaskID || '').toLowerCase().includes(filterText);
-      const matchPrio = filterPrio === 'All' || t.Priority === filterPrio;
-      if (!matchText || !matchPrio) return;
-
+    filteredTasks.forEach(t => {
       if (grouped[t.Status]) grouped[t.Status].push(t);
       else grouped['Not Started'].push(t);
     });
 
-    // Build team avatar stack from distinct assignees (up to 6)
-    const assignees = [...new Set(State.tasks.map(t => t.AssignedTo).filter(Boolean))].slice(0, 6);
-    const avatarStack = assignees.map(name => `
-    <div class="k-avatar" title="${name}"
-         style="background:${getAvatarColor(name)}"
-         onclick="document.getElementById('k-search').value='${name}'; renderKanban();">
-      ${getInitials(name)}
-    </div>`).join('');
+    // Active filter count
+    const activeCount = [f.priority, f.status].filter(v => v !== 'All').length + (f.assignee.length > 0 ? 1 : 0);
 
-    // Priority icon class helper
-    function priorityIconClass(p) {
-      if (p === 'Critical') return 'kp-critical';
-      if (p === 'High') return 'kp-high';
-      if (p === 'Medium') return 'kp-medium';
-      return 'kp-low';
-    }
+    // Build team avatar stack
+    const allNames = [...new Set(State.tasks.map(t => t.AssignedTo || 'Unassigned'))].sort();
+    // Prioritize showing some diverse ones, but always include Unassigned
+    const sorted = allNames.filter(n => n !== 'Unassigned').slice(0, 7);
+    if (allNames.includes('Unassigned')) sorted.unshift('Unassigned');
+
+    const avatarStack = sorted.map(name => {
+      const isActive = f.assignee.includes(name);
+      if (name === 'Unassigned') {
+        return `
+        <div class="k-avatar k-avatar-unassigned ${isActive ? 'k-avatar-active' : ''}" 
+             title="Unassigned"
+             onclick="toggleAssigneeFilter('Unassigned')"
+             ondblclick="clearAssigneeFilter('Unassigned')"
+             style="background:#475569; padding:0; overflow:hidden;">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="color:white; margin-top:4px;">
+            <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>
+          </svg>
+        </div>`;
+      }
+      return `
+      <div class="k-avatar ${isActive ? 'k-avatar-active' : ''}" title="${name}"
+           style="background:${getAvatarColor(name)}"
+           onclick="toggleAssigneeFilter('${name}')"
+           ondblclick="clearAssigneeFilter('${name}')">
+        ${getInitials(name)}
+      </div>`;
+    }).join('');
 
     const cols = KANBAN_COLS.map(col => {
       const colTotal = State.tasks.filter(t => t.Status === col).length;
-      const cards = grouped[col].map(t => `
-      <div class="kanban-card" draggable="true" id="card-${t.TaskID}"
-           ondragstart="handleDragStart(event,'${t.TaskID}')"
-           title="Drag to move column">
-        ${(t.Status !== 'Completed' && t.Status !== 'Cancelled' && t.DueDate && new Date(t.DueDate) < new Date()) ? '<div class="kanban-overdue-dot"></div>' : ''}
-        <div class="kanban-card-title" onclick="openModal('${t.TaskID}')">${t.Title || 'Untitled Task'}</div>
-        <div style="font-size: 0.75rem; color: var(--text-muted); margin: 0.5rem 0; line-height: 1.3;">
-          ${t.Description ? t.Description.substring(0, 60) + (t.Description.length > 60 ? '...' : '') : '<em style="opacity: 0.5;">No description</em>'}
-        </div>
-        <div class="kanban-card-footer">
-          <div class="kanban-card-id-row">
-            <svg class="kanban-card-bookmark" width="11" height="13" viewBox="0 0 10 13" fill="currentColor">
-              <path d="M0 0h10v13l-5-3-5 3V0z"/>
-            </svg>
+      const cards = grouped[col].map(t => {
+        const pColor = PRIORITY_MAP[t.Priority]?.color || '#9ca3af';
+        const isOverdue = t.DueDate && new Date(t.DueDate) < new Date() && !['Completed','Cancelled','Blocked'].includes(t.Status);
+
+        return `
+        <div class="kanban-card" draggable="true" id="card-${t.TaskID}"
+             ondragstart="handleDragStart(event,'${t.TaskID}')"
+             style="border-left-color: ${pColor}">
+          <div>
+            <div class="kanban-card-title" onclick="openModal('${t.TaskID}')">${t.Title || 'Untitled'}</div>
+            <div class="kanban-card-desc">${t.Description || 'No description'}</div>
+            ${isOverdue ? `<div class="kanban-overdue-label">⚠️ ${formatOverdueDate(t.DueDate)}</div>` : ''}
+          </div>
+          <div class="kanban-card-footer">
             <span class="kanban-card-id">${t.TaskID}</span>
-          </div>
-          <div class="kanban-card-actions">
-            <button class="kanban-card-menu" onclick="event.stopPropagation(); openModal('${t.TaskID}')" title="Options">···</button>
-            <div class="kanban-priority-lines ${priorityIconClass(t.Priority || 'Medium')}" title="Priority: ${t.Priority || 'Medium'}">
-              <span></span><span></span><span></span>
+            <div class="kanban-card-actions">
+              <button class="kanban-card-menu" onclick="event.stopPropagation(); openModal('${t.TaskID}')">···</button>
+              <div class="kanban-card-avatar" style="background:${(t.AssignedTo && t.AssignedTo !== 'Unassigned') ? getAvatarColor(t.AssignedTo) : '#475569'}; display:flex; align-items:center; justify-content:center; overflow:hidden;" title="${t.AssignedTo || 'Unassigned'}">
+                ${(t.AssignedTo && t.AssignedTo !== 'Unassigned') ? getInitials(t.AssignedTo) : `
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="color:white; margin-top:2px;">
+                    <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>
+                  </svg>
+                `}
+              </div>
             </div>
-            <div class="kanban-card-avatar" style="background:${getAvatarColor(t.AssignedTo || 'Unassigned')}" title="${t.AssignedTo || 'Unassigned'}">
-              ${getInitials(t.AssignedTo || 'U')}
-            </div>
           </div>
-        </div>
-      </div>`).join('');
+        </div>`;
+      }).join('');
 
       return `
       <div class="kanban-col" data-status="${col}"
            ondragover="allowDrop(event)" ondrop="handleDrop(event)" ondragleave="handleDragLeave(event)">
         <div class="kanban-col-header">
           <div class="kanban-col-title">
-            <div style="width:8px;height:8px;border-radius:50%;background:${STATUS_MAP[col]?.color || '#64748b'};flex-shrink:0;"></div>
+            <div style="width:8px;height:8px;border-radius:50%;background:${STATUS_MAP[col]?.color || '#64748b'};"></div>
             ${col.toUpperCase()}
           </div>
           <span class="kanban-col-count-badge">${grouped[col].length} OF ${colTotal}</span>
         </div>
-        <div class="kanban-col-body">${cards || '<div class="kanban-empty-col">Drop tasks here</div>'}</div>
+        <div class="kanban-col-body">${cards || '<div class="kanban-empty-col">No tasks</div>'}</div>
       </div>`;
     }).join('');
 
@@ -515,37 +619,86 @@
     <div class="page-header">
       <div class="page-title-group">
         <h1>Kanban Board</h1>
-        <p>Drag cards between columns to update status</p>
+        <p>Manage and track team progress across work stages</p>
       </div>
     </div>
+
+    <!-- Toolbar -->
     <div class="kanban-toolbar">
       <div class="kanban-toolbar-left">
         <div class="kanban-search-wrap">
-          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
-          <input type="text" id="k-search" class="kanban-search" placeholder="Search board"
-                 value="${filterText}" onkeyup="renderKanban()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="k-search" class="kanban-search" placeholder="Search tasks..." 
+                 value="${f.text}" onkeyup="State.kanbanFilter.text=this.value; renderKanban();">
         </div>
         <div class="kanban-avatar-stack">${avatarStack}</div>
       </div>
       <div class="kanban-toolbar-right">
-        <select id="k-prio-filter" class="input-glass" onchange="renderKanban()" style="font-size:0.8rem;padding:0.4rem 0.75rem;">
-          <option value="All">All Priorities</option>
-          ${Object.keys(PRIORITY_MAP).map(p => `<option value="${p}" ${filterPrio === p ? 'selected' : ''}>${p}</option>`).join('')}
-        </select>
+        <button class="btn btn-secondary btn-sm kanban-filter-btn" onclick="toggleFilterPanel()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+          Filter
+          ${activeCount > 0 ? `<span class="kanban-filter-badge">${activeCount}</span>` : ''}
+        </button>
         <button class="btn btn-primary btn-sm" onclick="openModal()">
-          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           New Task
         </button>
       </div>
     </div>
+
+    <!-- Filter Panel -->
+    <div id="filter-panel" class="filter-panel ${State.isKanbanFilterOpen ? 'open' : ''}">
+      <div class="filter-panel-header">
+        <div style="font-size:0.85rem; font-weight:700;">Advanced Filters</div>
+        <button class="btn btn-ghost btn-sm" style="font-size:0.75rem;" onclick="clearKanbanFilters()">Clear All</button>
+      </div>
+      <div class="filter-grid">
+        <div class="filter-section">
+          <span class="filter-section-label">Priority</span>
+          <div class="filter-chips">
+            ${['All', 'Critical', 'High', 'Medium', 'Low'].map(p => `
+              <button class="filter-chip ${f.priority === p ? 'active' : ''}" onclick="setKanbanFilter('priority', '${p}')">${p}</button>
+            `).join('')}
+          </div>
+        </div>
+        <div class="filter-section">
+          <span class="filter-section-label">Assignee</span>
+          <div class="filter-chips">
+            <button class="filter-chip ${f.assignee.length === 0 ? 'active' : ''}" onclick="State.kanbanFilter.assignee=[]; renderKanban();">All Members</button>
+            ${State.employees.map(e => `
+              <button class="filter-chip ${f.assignee.includes(e.Name) ? 'active' : ''}" onclick="toggleAssigneeFilter('${e.Name}')">
+                <div style="width:14px; height:14px; border-radius:50%; background:${getAvatarColor(e.Name)}; font-size:0.5rem; display:flex; align-items:center; justify-content:center; color:white;">${getInitials(e.Name)}</div>
+                ${e.Name}
+              </button>
+            `).join('')}
+            <button class="filter-chip ${f.assignee.includes('Unassigned') ? 'active' : ''}" onclick="toggleAssigneeFilter('Unassigned')">
+              <div style="width:14px; height:14px; border-radius:50%; background:#475569; display:flex; align-items:center; justify-content:center;">
+                <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor" style="color:white;"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+              </div>
+              Unassigned
+            </button>
+          </div>
+        </div>
+        <div class="filter-section">
+          <span class="filter-section-label">Status</span>
+          <div class="filter-chips">
+            <button class="filter-chip ${f.status === 'All' ? 'active' : ''}" onclick="setKanbanFilter('status', 'All')">All Statuses</button>
+            ${KANBAN_COLS.map(s => `
+              <button class="filter-chip ${f.status === s ? 'active' : ''}" onclick="setKanbanFilter('status', '${s}')">${s}</button>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="kanban-board">${cols}</div>`;
 
-    const el = document.getElementById('k-search');
-    if (el && filterText) el.focus();
+    // Focus search if it was active
+    const searchEl = document.getElementById('k-search');
+    if (searchEl && f.text) {
+      searchEl.focus();
+      searchEl.setSelectionRange(f.text.length, f.text.length);
+    }
   }
 
   let _dragId = null;
@@ -1151,6 +1304,38 @@ function downloadPDF(e) {
           scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { color: gridColor }, ticks: { stepSize: 1 } } }
         }
       });
+
+      // Effort Analysis — Est vs Actual hours doughnut
+      const empEffortEst = empTasks.reduce((s, t) => s + (parseFloat(t.EstHours) || 0), 0);
+      const empEffortAct = empTasks.reduce((s, t) => s + (parseFloat(t.ActualHours) || 0), 0);
+
+      safeChart('empEffortDoughnut', {
+        type: 'doughnut',
+        data: {
+          labels: ['Actual Hours', 'Remaining Est.'],
+          datasets: [{
+            data: [
+              Math.round(empEffortAct * 10) / 10,
+              Math.max(0, Math.round((empEffortEst - empEffortAct) * 10) / 10)
+            ],
+            backgroundColor: ['rgba(20,184,166,0.7)', 'rgba(99,102,241,0.35)'],
+            borderColor: [isDark ? '#0d1420' : '#f8fafc', isDark ? '#0d1420' : '#f8fafc'],
+            borderWidth: 2,
+            hoverOffset: 6
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: '65%',
+          plugins: {
+            legend: { position: 'bottom', labels: { padding: 12, usePointStyle: true } },
+            tooltip: {
+              callbacks: {
+                label: ctx => ` ${ctx.label}: ${ctx.parsed} hrs`
+              }
+            }
+          }
+        }
+      });
     }
 
     if (sub === 'monthly') {
@@ -1226,7 +1411,73 @@ function downloadPDF(e) {
     }
 
     if (sub === 'manager') {
-      // Manager subview removed
+      // Team Utilization — Est vs Actual hours per team member
+      const empNames = State.employees.map(e => e.Name);
+      const estHours = empNames.map(n =>
+        State.tasks.filter(t => t.AssignedTo === n).reduce((s, t) => s + (parseFloat(t.EstHours) || 0), 0)
+      );
+      const actHours = empNames.map(n =>
+        State.tasks.filter(t => t.AssignedTo === n).reduce((s, t) => s + (parseFloat(t.ActualHours) || 0), 0)
+      );
+
+      safeChart('mgrTeamBar', {
+        type: 'bar',
+        data: {
+          labels: empNames,
+          datasets: [
+            {
+              label: 'Est. Hours',
+              data: estHours,
+              backgroundColor: 'rgba(99,102,241,0.55)',
+              borderColor: '#6366f1',
+              borderWidth: 2,
+              borderRadius: 6
+            },
+            {
+              label: 'Actual Hours',
+              data: actHours,
+              backgroundColor: 'rgba(20,184,166,0.55)',
+              borderColor: '#14b8a6',
+              borderWidth: 2,
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: {
+            x: { grid: { display: false } },
+            y: { beginAtZero: true, grid: { color: gridColor } }
+          }
+        }
+      });
+
+      // Team Status Spread — Task statuses across entire team
+      const stsOrder = Object.keys(STATUS_MAP);
+      const stsCounts = stsOrder.map(s => State.tasks.filter(t => t.Status === s).length);
+      const nonZero = stsOrder.filter((_, i) => stsCounts[i] > 0);
+      const nonZeroCounts = stsCounts.filter(c => c > 0);
+
+      safeChart('mgrStatusDoughnut', {
+        type: 'doughnut',
+        data: {
+          labels: nonZero,
+          datasets: [{
+            data: nonZeroCounts,
+            backgroundColor: nonZero.map(s => STATUS_MAP[s].color + 'bb'),
+            borderColor: isDark ? '#0d1420' : '#f8fafc',
+            borderWidth: 2,
+            hoverOffset: 8
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: '60%',
+          plugins: {
+            legend: { position: 'right', labels: { padding: 12, usePointStyle: true } }
+          }
+        }
+      });
     }
 
     if (sub === 'visual') {
@@ -1295,6 +1546,10 @@ function downloadPDF(e) {
   // ======================================================
   //  TEAM MASTER VIEW
   // ======================================================
+  function isAdmin() {
+    return State.user && State.user.role === 'Admin';
+  }
+
   function renderEmployees() {
     const main = document.getElementById('content');
 
@@ -1306,10 +1561,11 @@ function downloadPDF(e) {
         <p>${State.employees.length} team members · Organizational roles</p>
       </div>
       <div class="page-actions">
+        ${isAdmin() ? `
         <button class="btn btn-primary btn-sm" onclick="openEmpModal()">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Add Member
-        </button>
+        </button>` : ''}
       </div>
     </div>
 
@@ -1331,6 +1587,7 @@ function downloadPDF(e) {
               <td class="text-xs">${formatDate(e.JoinDate)}</td>
               <td><span class="badge ${e.Status === 'Active' ? 'status-completed' : 'status-cancelled'}">${e.Status}</span></td>
               <td>
+                ${isAdmin() ? `
                 <div style="display:flex;align-items:center;gap:0.4rem;">
                   <button class="btn-icon" title="Edit Employee" onclick="openEmpModal('${e.EmpID}')">
                     <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1346,7 +1603,7 @@ function downloadPDF(e) {
                       <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
                     </svg>
                   </button>
-                </div>
+                </div>` : '<span class="text-xs text-muted">View Only</span>'}
               </td>
             </tr>`).join('')}
           </tbody>
@@ -1359,31 +1616,35 @@ function downloadPDF(e) {
   function openEmpModal(empId = null) {
     const overlay = document.getElementById('employee-modal');
     const inner = document.getElementById('employee-form-inner');
+    const isEdit = empId !== null && empId !== '';
+    
+    // Track ID for saving
     inner.setAttribute('data-emp-id', empId || '');
 
-    const modalTitle = document.querySelector('#employee-modal .modal-title');
-    const modalSubtitle = document.querySelector('#employee-modal .modal-subtitle');
+    // Update modal title
+    document.querySelector('#employee-modal .modal-title').textContent = isEdit ? 'Edit Team Member' : 'New Team Member';
+    
+    // Show/hide password fields
+    document.getElementById('e-password').closest('.form-group').style.display = isEdit ? 'none' : 'block';
+    document.getElementById('e-new-password').closest('.form-group').style.display = isEdit ? 'block' : 'none';
 
-    if (empId) {
-      modalTitle.textContent = 'Edit Team Member';
-      modalSubtitle.textContent = `Editing employee ${empId}`;
+    if (isEdit) {
       const emp = State.employees.find(e => e.EmpID === empId);
       if (emp) {
         document.getElementById('e-name').value = emp.Name || '';
         document.getElementById('e-email').value = emp.Email || '';
         document.getElementById('e-role').value = emp.Role || 'Employee';
         document.getElementById('e-join-date').value = formatISO(emp.JoinDate);
+        document.getElementById('e-new-password').value = '';
       }
     } else {
-      modalTitle.textContent = 'New Team Member';
-      modalSubtitle.textContent = 'Add a member to the Accounts registry';
-      ['e-name', 'e-email', 'e-join-date'].forEach(id => {
+      ['e-name', 'e-email', 'e-password', 'e-join-date'].forEach(id => {
         const el = document.getElementById(id); if (el) el.value = '';
       });
       document.getElementById('e-role').value = 'Employee';
     }
 
-    overlay.classList.add('open');
+    if (overlay) overlay.classList.add('open');
   }
 
   function closeEmpModal() {
@@ -1395,37 +1656,41 @@ function downloadPDF(e) {
   }
 
   async function saveEmployee() {
+    const empId = document.getElementById('employee-form-inner').getAttribute('data-emp-id');
+    const isEdit = empId !== null && empId !== '';
+
     const name = document.getElementById('e-name').value.trim();
     const email = document.getElementById('e-email').value.trim();
-
-    if (!name) { alert('Name is required'); return; }
-    if (!email) { alert('Email is required'); return; }
-
-    const empId = document.getElementById('employee-form-inner').getAttribute('data-emp-id');
+    const role = document.getElementById('e-role').value;
+  
+    if (!name || !email) { 
+      alert('Name and Email are required'); 
+      return; 
+    }
 
     const payload = {
       Name: name,
       Email: email,
-      Role: document.getElementById('e-role').value || 'Employee',
+      Role: role,
       JoinDate: document.getElementById('e-join-date').value || new Date().toISOString().split('T')[0],
       Status: 'Active',
-      Department: 'Accounts',
-      Manager: '',
-      WeeklyCapacity: 40,
-      Location: '',
-      Notes: ''
+      Department: 'Accounts'
     };
 
     const saveBtn = document.querySelector('#employee-modal .btn-primary');
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
 
     try {
-      if (empId) {
+      if (isEdit) {
         payload.EmpID = empId;
+        payload.NewPassword = document.getElementById('e-new-password').value.trim();
         await callServer('updateEmployee', payload);
         const i = State.employees.findIndex(e => e.EmpID === empId);
         if (i >= 0) State.employees[i] = { ...State.employees[i], ...payload };
       } else {
+        const password = document.getElementById('e-password').value.trim();
+        if (!password) { alert('Password is required'); saveBtn.disabled = false; saveBtn.textContent='Save Member'; return; }
+        payload.Password = password;
         const newId = await callServer('addEmployee', payload);
         payload.EmpID = newId;
         State.employees.push(payload);
@@ -1477,16 +1742,22 @@ function downloadPDF(e) {
         document.getElementById('t-priority').value = t.Priority || 'Medium';
         document.getElementById('t-status').value = t.Status || 'Not Started';
         document.getElementById('t-due').value = formatISO(t.DueDate);
+        
+        // PART 3 — Populate readonly fields
+        document.getElementById('t-inprogress-date').value = formatFullDateTime(t.InProgressDate);
+        document.getElementById('t-completed-date').value = formatFullDateTime(t.CompletedDate);
+        showHideTimestampFields();
       }
     } else {
       document.getElementById('modal-title').textContent = 'New Task';
       document.getElementById('modal-subtitle').textContent = 'Fill in the basic details for the accounts task';
-      ['t-title', 't-desc', 't-due'].forEach(id => {
+      ['t-title', 't-desc', 't-due', 't-inprogress-date', 't-completed-date'].forEach(id => {
         const el = document.getElementById(id); if (el) el.value = '';
       });
       document.getElementById('t-priority').value = 'Medium';
       document.getElementById('t-status').value = 'Not Started';
       document.getElementById('t-assignee').value = '';
+      showHideTimestampFields();
     }
 
     overlay.classList.add('open');
@@ -1520,15 +1791,14 @@ function downloadPDF(e) {
       DueDate: document.getElementById('t-due').value || ''
     };
 
-    if (newStatus === 'In Progress') {
-      // Stamp InProgressDate only if not already set (first time going In Progress)
-      const existing = State.tasks.find(x => x.TaskID === taskId);
-      if (!existing || !existing.InProgressDate) {
-        payload.InProgressDate = new Date().toISOString();
+    // PART 3 — Preserve existing timestamps from state
+    if (taskId) {
+      const t = State.tasks.find(x => x.TaskID === taskId);
+      if (t) {
+        payload.InProgressDate = t.InProgressDate || '';
+        payload.CompletedDate = t.CompletedDate || '';
       }
     }
-    if (newStatus === 'Completed' && !taskId) payload.CompletedDate = new Date().toISOString();
-    if (newStatus === 'Completed' && taskId) payload.CompletedDate = new Date().toISOString();
 
     const saveBtn = document.querySelector('.modal-footer .btn-primary');
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
@@ -1616,79 +1886,25 @@ function downloadPDF(e) {
   // ======================================================
   //  AUTHENTICATION LOGIC
   // ======================================================
-  function toggleAuth(isSignup) {
-    console.log('Toggle Auth:', isSignup ? 'Signup' : 'Login');
-    const title = document.getElementById('auth-title');
-    const sub = document.getElementById('auth-subtitle');
-    const login = document.getElementById('login-form');
-    const sign = document.getElementById('signup-form');
-
-    if (title) title.textContent = isSignup ? 'Create Account' : 'Welcome Back';
-    if (sub) sub.textContent = isSignup ? 'Join the Workflow Pro team' : 'Please login to access Accounts Management';
-
-    if (login) login.style.display = isSignup ? 'none' : 'block';
-    if (sign) sign.style.display = isSignup ? 'block' : 'none';
-  }
+  /* Signup removed per requirements */
 
   async function handleLogin() {
-    const user = document.getElementById('l-user').value.trim();
+    const email = document.getElementById('l-user').value.trim();
     const pass = document.getElementById('l-pass').value;
-    if (!user || !pass) { alert('Please enter both username and password'); return; }
+    if (!email || !pass) { alert('Please enter both email and password'); return; }
 
-    const btn = document.getElementById('login-btn');
-    btn.disabled = true; btn.textContent = 'Authenticating...';
+    const btn = document.querySelector('#login-form .btn-primary');
+    if (btn) { btn.disabled = true; btn.textContent = 'Authenticating...'; }
 
     try {
-      const userData = await callServer('login', user, pass);
+      const userData = await callServer('login', email, pass);
       State.user = userData;
       localStorage.setItem('wf-session', JSON.stringify(userData));
       await proceedToDashboard();
     } catch (err) {
       alert('Login Failed: ' + err.message);
     } finally {
-      btn.disabled = false; btn.textContent = 'Login';
-    }
-  }
-
-  async function handleSignup() {
-    const user = document.getElementById('s-user').value.trim();
-    const email = document.getElementById('s-email').value.trim();
-    const pass = document.getElementById('s-pass').value;
-
-    if (!user || !email || !pass) { alert('All fields are required'); return; }
-
-    const btn = document.getElementById('signup-btn');
-    btn.disabled = true; btn.textContent = 'Creating...';
-
-    try {
-      // 1. Create the user account
-      const userData = await callServer('signup', { username: user, password: pass, email: email, role: 'Employee' });
-
-      // 2. Also add the same person as an employee so they appear in task assignment
-      try {
-        const empPayload = {
-          Name: user,
-          Email: email,
-          Role: 'Employee',
-          JoinDate: new Date().toISOString().split('T')[0],
-          Status: 'Active',
-          Department: 'Accounts',
-          Manager: '',
-          WeeklyCapacity: 40,
-          Location: '',
-          Notes: ''
-        };
-        await callServer('addEmployee', empPayload);
-      } catch (empErr) {
-        console.warn('Employee record creation skipped:', empErr.message);
-      }
-
-      alert('Account created successfully! Please login.');
-      toggleAuth(false);
-    } catch (err) {
-      alert('Signup Failed: ' + err.message);
-    } finally {
-      btn.disabled = false; btn.textContent = 'Create Account';
+      if (btn) { btn.disabled = false; btn.textContent = 'Login to Dashboard'; }
     }
   }
 
@@ -1709,12 +1925,13 @@ function downloadPDF(e) {
       document.getElementById('sidebar').style.display = 'flex';
 
       // Set UI names
-      document.getElementById('user-display-name').textContent = State.user.username;
+      // Set UI names
+      document.getElementById('user-display-name').textContent = State.user.displayName;
       document.getElementById('user-display-role').textContent = State.user.role || 'Workflow Pro';
       const avatar = document.getElementById('user-avatar');
       if (avatar) {
-        avatar.textContent = getInitials(State.user.username);
-        avatar.style.background = getAvatarColor(State.user.username);
+        avatar.textContent = getInitials(State.user.displayName);
+        avatar.style.background = getAvatarColor(State.user.displayName);
       }
 
       await refreshData();

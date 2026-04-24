@@ -6,12 +6,12 @@ function initializeDatabase() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   
   const sheets = [
-    { name: 'DB_Tasks', headers: ['TaskID', 'Title', 'Description', 'AssignedTo', 'Priority', 'Status', 'DueDate', 'CreatedAt', 'CompletedDate'] },
+    { name: 'DB_Tasks', headers: ['TaskID', 'Title', 'Description', 'AssignedTo', 'Priority', 'Status', 'DueDate', 'CreatedAt', 'InProgressDate', 'CompletedDate'] },
     { name: 'DB_TaskSteps', headers: ['StepID', 'ParentTaskID', 'StepName', 'StepDescription', 'StepOwner', 'StepStatus', 'ActionType', 'PlannedDate', 'DueDate', 'CompletedDate', 'EstHours', 'ActualHours', 'HoursVariance', 'DaysOpen', 'Overdue', 'Notes'] },
-    { name: 'DB_Employees', headers: ['EmpID', 'Name', 'Role', 'Email', 'JoinDate', 'Status'] },
+    { name: 'DB_Employees', headers: ['EmpID', 'Name', 'Role', 'Email', 'JoinDate', 'Status', 'Department'] },
     { name: 'DB_AuditLog', headers: ['Timestamp', 'User', 'Action', 'TargetID', 'Details'] },
     { name: 'DB_Config', headers: ['Category', 'Value', 'Label', 'Color'] },
-    { name: 'DB_Users', headers: ['Username', 'PasswordHash', 'Email', 'Role', 'CreatedAt'] }
+    { name: 'DB_Users', headers: ['Username', 'PasswordHash', 'Email', 'Role', 'CreatedAt', 'LinkedEmpID'] }
   ];
 
   sheets.forEach(sheetInfo => {
@@ -21,6 +21,9 @@ function initializeDatabase() {
       sheet.getRange(1, 1, 1, sheetInfo.headers.length).setValues([sheetInfo.headers]);
       sheet.getRange(1, 1, 1, sheetInfo.headers.length).setFontWeight('bold').setBackground('#f3f4f6');
       sheet.setFrozenRows(1);
+    } else {
+      // Force update headers to ensure schema matches latest requirements
+      sheet.getRange(1, 1, 1, sheetInfo.headers.length).setValues([sheetInfo.headers]);
     }
   });
 
@@ -39,6 +42,22 @@ function initializeDatabase() {
       ['Priority', 'Critical', 'Critical', '#7f1d1d']
     ];
     configSheet.getRange(2, 1, configData.length, 4).setValues(configData);
+  }
+
+  // Seed Admin Account if empty
+  const userSheet = ss.getSheetByName('DB_Users');
+  if (userSheet.getLastRow() <= 1) {
+    const adminEmail = 'admin@company.com';
+    const adminPayload = [
+      adminEmail, 
+      hashPassword('Admin@123'), 
+      adminEmail, 
+      'Admin', 
+      new Date().toISOString(), 
+      'SYSTEM'
+    ];
+    userSheet.getRange(2, 1, 1, adminPayload.length).setValues([adminPayload]);
+    Logger.log('✅ Default admin account created: admin@company.com / Admin@123');
   }
 
   Logger.log('✅ Database Initialized: All DB sheets and initial configurations have been set up.');

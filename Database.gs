@@ -24,15 +24,19 @@ function getRecords(sheetName) {
   const data = sheet.getDataRange().getValues();
   if (data.length <= 1) return []; // Empty sheet or just headers
   
-  const headers = data[0].map(h => h ? String(h).trim() : '');
+  const rawHeaders = data[0].map(h => h ? String(h).trim() : '');
+  const firstCol = rawHeaders.findIndex(h => h !== '');
+  if (firstCol === -1) return [];
+
+  const headers = rawHeaders.slice(firstCol);
+  const cleanRows = data.slice(1).map(r => r.slice(firstCol));
   
-  // Filter out rows that are completely empty
-  return data.slice(1)
+  return cleanRows
     .filter(row => row.some(cell => cell !== '' && cell !== null && cell !== undefined))
     .map(row => {
       const record = {};
       headers.forEach((header, i) => {
-        if (header) { // Only map non-empty headers
+        if (header) {
           let val = row[i];
           if (val instanceof Date) val = val.toISOString();
           record[header] = val !== undefined ? val : '';
@@ -54,19 +58,18 @@ function addRecord(sheetName, record, userEmail) {
   if (!sheet) throw new Error(`Sheet ${sheetName} not found`);
   
   const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const headers = headerRow.map(h => h ? String(h).trim() : '');
+  const firstCol = headerRow.findIndex(h => h ? String(h).trim() !== '' : false);
+  if (firstCol === -1) throw new Error(`No headers found in ${sheetName}`);
+
+  const headers = headerRow.slice(firstCol).map(h => h ? String(h).trim() : '');
   
-  // Build row with values aligned to headers
-  const row = headers.map(header => {
-    if (!header) return ''; // Skip empty headers
+  const rowValues = headers.map(header => {
+    if (!header) return ''; 
     const val = record[header];
     return val !== undefined && val !== null ? val : '';
   });
   
-  // Only keep columns while we have headers
-  const validRow = row.slice(0, headers.filter(h => h).length);
-  sheet.appendRow(validRow);
-  
+  sheet.getRange(sheet.getLastRow() + 1, firstCol + 1, 1, rowValues.length).setValues([rowValues]);
   logActivity('Create', sheetName, `Added record: ${JSON.stringify(record)}`, userEmail);
 }
 
@@ -81,20 +84,24 @@ function updateRecord(sheetName, idKey, record, userEmail) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(sheetName);
   const data = sheet.getDataRange().getValues();
-  const headers = data[0].map(h => h ? String(h).trim() : '');
+  const rawHeaders = data[0].map(h => h ? String(h).trim() : '');
+  const firstCol = rawHeaders.findIndex(h => h !== '');
+  if (firstCol === -1) throw new Error(`No headers found in ${sheetName}`);
+
+  const headers = rawHeaders.slice(firstCol);
   const idIndex = headers.indexOf(idKey);
   
   if (idIndex === -1) throw new Error(`ID key ${idKey} not found.`);
   
   for (let i = 1; i < data.length; i++) {
-    if (data[i][idIndex] === record[idKey]) {
+    // Use full row index to check ID
+    if (data[i][firstCol + idIndex] === record[idKey]) {
       const rowNum = i + 1;
       const rowValues = headers.map((header, colIndex) => {
         if (!header) return '';
-        // If the update record contains the key, use it. Otherwise keep original cell.
-        return (record.hasOwnProperty(header)) ? record[header] : data[i][colIndex];
+        return (record.hasOwnProperty(header)) ? record[header] : data[i][firstCol + colIndex];
       });
-      sheet.getRange(rowNum, 1, 1, headers.length).setValues([rowValues]);
+      sheet.getRange(rowNum, firstCol + 1, 1, headers.length).setValues([rowValues]);
       logActivity('Update', sheetName, `Updated ID: ${record[idKey]}`, userEmail);
       return true;
     }

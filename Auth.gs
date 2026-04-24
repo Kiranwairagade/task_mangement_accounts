@@ -8,45 +8,28 @@
  * @param {Object} data { username, password, email, role }
  */
 function signupUser(data) {
-  const users = getRecords('DB_Users');
-  
-  // Check if username already exists
-  const existing = users.find(u => u.Username === data.username);
-  if (existing) throw new Error('Username already exists');
-  
-  const payload = {
-    Username: data.username,
-    PasswordHash: hashPassword(data.password),
-    Email: data.email,
-    Role: data.role || 'Employee',
-    CreatedAt: new Date().toISOString()
-  };
-  
-  addRecord('DB_Users', payload);
-  return { username: payload.Username, role: payload.Role };
+  throw new Error('Self signup is disabled. Contact your admin to create an account.');
 }
 
 /**
- * Logs in a user.
- * @param {string} username
- * @param {string} password
+ * Logs in a user via email.
  */
-function loginUser(username, password) {
+function loginUser(email, password) {
   const users = getRecords('DB_Users');
-  const user = users.find(u => u.Username === username);
+  const user = users.find(u => u.Email === email);
   
-  if (!user) throw new Error('User not found');
+  if (!user) throw new Error('No account found for this email. Contact your admin.');
   
   const hash = hashPassword(password);
   if (user.PasswordHash !== hash) throw new Error('Invalid password');
   
-  // Log the login event with the user's actual email
-  logActivity('Login', 'DB_Users', `User "${username}" logged in`, user.Email || username);
+  logActivity('Login', 'DB_Users', `User "${email}" logged in`, email);
 
   return {
-    username: user.Username,
+    username: user.Email,
     role: user.Role,
-    email: user.Email
+    email: user.Email,
+    displayName: user.Email.split('@')[0]
   };
 }
 
