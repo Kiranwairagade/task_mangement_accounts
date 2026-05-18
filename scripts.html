@@ -497,7 +497,8 @@
   /* ── KANBAN HELPERS ── */
   function toggleFilterPanel() {
     State.isKanbanFilterOpen = !State.isKanbanFilterOpen;
-    document.getElementById('filter-panel').classList.toggle('open', State.isKanbanFilterOpen);
+    const panel = document.getElementById('filter-panel');
+    if (panel) panel.classList.toggle('open', State.isKanbanFilterOpen);
   }
 
   function setKanbanFilter(key, val) {
@@ -553,7 +554,10 @@
     });
 
     // Active filter count
-    const activeCount = [f.priority, f.status].filter(v => v !== 'All').length + (f.assignee.length > 0 ? 1 : 0);
+    const activeCount =
+      [f.priority, f.status].filter(v => v !== 'All').length +
+      (f.assignee.length > 0 ? 1 : 0) +
+      (f.text.trim() ? 1 : 0);
 
     // Build team avatar stack
     const allNames = [...new Set(State.tasks.map(t => t.AssignedTo || 'Unassigned'))].sort();
@@ -583,6 +587,54 @@
         ${getInitials(name)}
       </div>`;
     }).join('');
+
+    const priorityOptions = ['All', 'Critical', 'High', 'Medium', 'Low'];
+    const statusOptions = ['All', 'Not Started', 'In Progress', 'Review', 'On Hold', 'Blocked', 'Completed', 'Cancelled'];
+
+    const filterPanel = `
+    <div id="filter-panel" class="filter-panel ${State.isKanbanFilterOpen ? 'open' : ''}">
+      <div class="filter-panel-header">
+        <div>
+          <strong>Filters</strong>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="clearKanbanFilters()">Clear All</button>
+      </div>
+      <div class="filter-grid">
+        <div class="filter-section">
+          <div class="filter-section-label">Priority</div>
+          <div class="filter-chips">
+            ${priorityOptions.map(option => `
+              <button
+                class="filter-chip ${f.priority === option ? 'active' : ''}"
+                onclick="setKanbanFilter('priority', '${option}')"
+              >${option}</button>
+            `).join('')}
+          </div>
+        </div>
+        <div class="filter-section">
+          <div class="filter-section-label">Status</div>
+          <div class="filter-chips">
+            ${statusOptions.map(option => `
+              <button
+                class="filter-chip ${f.status === option ? 'active' : ''}"
+                onclick="setKanbanFilter('status', '${option}')"
+              >${option}</button>
+            `).join('')}
+          </div>
+        </div>
+        <div class="filter-section">
+          <div class="filter-section-label">Assignee</div>
+          <div class="filter-chips">
+            ${allNames.map(name => `
+              <button
+                class="filter-chip ${f.assignee.includes(name) ? 'active' : ''}"
+                onclick="toggleAssigneeFilter('${name.replace(/'/g, "\\'")}')"
+              >${name}</button>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    </div>`;
 
     const cols = KANBAN_COLS.map(col => {
       const colTotal = State.tasks.filter(t => t.Status === col).length;
@@ -650,6 +702,7 @@
           <input type="text" id="k-search" class="kanban-search" placeholder="Search tasks..." 
                  value="${f.text}" onkeyup="State.kanbanFilter.text=this.value; renderKanban();">
         </div>
+        ${!isMobile() ? `<div class="kanban-avatar-stack">${avatarStack}</div>` : ''}
       </div>
       <div class="kanban-toolbar-right">
         <button class="btn btn-secondary btn-sm" onclick="toggleFilterPanel()">Filters ${activeCount ? `(${activeCount})` : ''}</button>
@@ -657,6 +710,7 @@
       </div>
     </div>
 
+    ${filterPanel}
     <div class="kanban-board">${cols}</div>
     ${scrollDots}
     `;
@@ -798,10 +852,10 @@ function downloadPDF(e) {
     } catch { return ''; }
   };
 
-  const calcDuration = (start, end, created) => {
-    const s = new Date(start || created);
+  const calcDuration = (start, end) => {
+    const s = new Date(start);
     const e = new Date(end);
-    if (!end || isNaN(s) || isNaN(e) || e < s) return '';
+    if (!start || !end || isNaN(s) || isNaN(e) || e < s) return '';
     const mins = Math.floor((e - s) / 60000);
     const h = Math.floor(mins / 60), m = mins % 60;
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
@@ -814,9 +868,9 @@ function downloadPDF(e) {
       <td><b>${t.Title || ''}</b></td>
       <td>${t.Description || ''}</td>
       <td class="c">${fmtDT(t.CreatedAt)}</td>
-      <td class="c">${fmtDT(t.InProgressDate || t.CreatedAt)}</td>
+      <td class="c">${fmtDT(t.InProgressDate)}</td>
       <td class="c">${fmtDT(t.CompletedDate)}</td>
-      <td class="c">${calcDuration(t.InProgressDate, t.CompletedDate, t.CreatedAt)}</td>
+      <td class="c">${calcDuration(t.InProgressDate, t.CompletedDate)}</td>
       <td class="c"><b>${t.Status || ''}</b></td>
     </tr>`).join('');
 
@@ -1643,7 +1697,7 @@ function downloadPDF(e) {
   }
 
   function handleEmpModalOverlayClick(e) {
-    if (e.target === document.getElementById('employee-modal')) closeEmpModal();
+    return;
   }
 
   async function saveEmployee() {
@@ -1759,7 +1813,7 @@ function downloadPDF(e) {
   }
 
   function handleModalOverlayClick(e) {
-    if (e.target === document.getElementById('task-modal')) closeModal();
+    return;
   }
 
   async function saveTask() {
@@ -1893,7 +1947,10 @@ function downloadPDF(e) {
   //  KEYBOARD SHORTCUTS
   // ======================================================
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closeModal();
+    if (e.key === 'Escape') {
+      closeModal();
+      closeEmpModal();
+    }
     if (e.ctrlKey && e.key === 'n') { e.preventDefault(); openModal(); }
   });
 
